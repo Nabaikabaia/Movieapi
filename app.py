@@ -1,51 +1,36 @@
+from flask import Flask, request, jsonify
 import requests
-from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
+# Change this ID to your category ID
 CATEGORY_ID = "62133389738001440"
-API_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/ranking-list/content"
-
 
 @app.route("/anime")
-def get_anime_ids():
-
-    page = request.args.get("page", default=1, type=int)
+def get_anime_subject_ids():
+    page = request.args.get("page", 1)
+    url = f"https://h5-api.aoneroom.com/wefeed-h5api-bff/ranking-list/content?id={CATEGORY_ID}&page={page}&perPage=12"
 
     headers = {
         "Accept": "application/json",
+        "Content-Type": "application/json",
         "X-Client-Info": '{"timezone":"Africa/Lagos"}',
+        "Authorization": "Bearer YOUR_BEARER_TOKEN_HERE",  # replace with your token
         "X-Request-Lang": "en"
     }
 
-    params = {
-        "id": CATEGORY_ID,
-        "page": page,
-        "perPage": 12
-    }
+    response = requests.get(url, headers=headers)
+    data = response.json()
 
-    res = requests.get(API_URL, headers=headers, params=params)
-    data = res.json()
-
-    subject_ids = [item["subjectId"] for item in data["data"]["subjectList"]]
+    # Extract only subjectIds
+    subject_ids = [item["subjectId"] for item in data.get("data", {}).get("subjectList", [])]
 
     return jsonify({
-        "category": "anime",
         "page": page,
-        "per_page": 12,
-        "subject_ids": subject_ids,
-        "has_more": data["data"]["pager"]["hasMore"],
-        "next_page": data["data"]["pager"]["nextPage"]
+        "subjectIds": subject_ids
     })
-
-
-@app.route("/")
-def home():
-    return jsonify({
-        "message": "Movie Subject ID API",
-        "endpoint": "/anime?page=1"
-    })
-
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    import os
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
