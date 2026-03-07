@@ -9,7 +9,7 @@ app = Flask(__name__)
 CREATOR = {
     "name": "Nabees",
     "channel": "https://whatsapp.com/channel/0029VawtjOXJpe8X3j3NCZ3j",
-    "website": "https://nabees.online,
+    "website": "https://nabees.online",
     "twitter": None,
     "github": None
 }
