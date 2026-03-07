@@ -15,7 +15,7 @@ def get_anime_subject_ids():
         "Accept": "application/json",
         "Content-Type": "application/json",
         "X-Client-Info": '{"timezone":"Africa/Lagos"}',
-        "Authorization": "Bearer YOUR_BEARER_TOKEN_HERE",  # replace with your token
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjQ2ODM2NjU2ODU2NTc1ODQwMCwiYXRwIjozLCJleHQiOiIxNzcxNDE0NjY0IiwiZXhwIjoxNzc5MTkwNjY0LCJpYXQiOjE3NzE0MTQzNjR9.o6K7hQd3ii0dW-FvuoJ4JMwjTJfOvvlE6G-MTjUV73Y",  # replace with your token
         "X-Request-Lang": "en"
     }
 
