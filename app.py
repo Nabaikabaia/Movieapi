@@ -9,7 +9,7 @@ app = Flask(__name__)
 CREATOR = {
     "name": "Nabees",
     "channel": "https://whatsapp.com/channel/0029VawtjOXJpe8X3j3NCZ3j",
-    "website": None,
+    "website": "https://nabees.online,
     "twitter": None,
     "github": None
 }
@@ -69,7 +69,7 @@ def home():
     return jsonify({
         "success": True,
         "creator": CREATOR,
-        "message": "🎬 Movie Categories API - Your Ultimate Global Movie Database",
+        "message": "🎬 Nabees Movie Categories API - Your Ultimate Global Movie Database",
         "version": "5.1",
         "total_categories": len(CATEGORIES),
         "endpoints": {
