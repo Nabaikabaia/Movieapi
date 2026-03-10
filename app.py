@@ -58,8 +58,8 @@ CATEGORY_INFO = {
     "indian": {"name": "South Indian Movies", "region": "India", "type": "Movies", "flag": "🇮🇳"}
 }
 
-# Headers for category API requests
-def get_headers():
+# Headers for category API requests (aoneroom.com)
+def get_category_headers():
     return {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -68,11 +68,21 @@ def get_headers():
         "X-Request-Lang": "en"
     }
 
-# Headers for search API
-def get_search_headers():
+# Headers for vid.davidxtech.de API requests (FIXES 403 ERROR)
+def get_vid_headers():
+    """Headers required to access vid.davidxtech.de - fixes 403 Forbidden error"""
     return {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://vid.davidxtech.de/",
+        "Origin": "https://vid.davidxtech.de",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache"
     }
 
 @app.route('/', methods=['GET'])
@@ -81,7 +91,7 @@ def home():
         "success": True,
         "creator": CREATOR,
         "message": "🎬 Nabees Movie API - Your Ultimate Global Movie Database",
-        "version": "7.0",
+        "version": "7.1",
         "total_categories": len(CATEGORIES),
         "endpoints": {
             # Category endpoints
@@ -104,8 +114,8 @@ def home():
         "examples": {
             "search_movies": "/api/search?q=avengers&page=1",
             "get_series": "/api/series?id=12345&season=1&episode=1",
-            "get_movie": "/api/movie?id=12345",
-            "get_sources_movie": "/api/sources/12345",
+            "get_movie": "/api/movie?id=4191963760367656968",
+            "get_sources_movie": "/api/sources/4191963760367656968",
             "get_sources_series": "/api/sources/12345?season=1&episode=1",
             "get_category": "/movies/k-drama?page=1&perPage=20",
             "search_categories": "/search?q=korea"
@@ -141,7 +151,7 @@ def get_movies(category):
     
     try:
         print(f"Fetching {category}...")
-        response = requests.get(url, headers=get_headers(), timeout=10)
+        response = requests.get(url, headers=get_category_headers(), timeout=10)
         response.raise_for_status()
         data = response.json()
         
@@ -240,7 +250,8 @@ def get_series():
 
     try:
         print(f"Fetching series: ID={movie_id}, S{season}E{episode}")
-        r = requests.get(url, timeout=10)
+        # Use vid headers to avoid 403 error
+        r = requests.get(url, headers=get_vid_headers(), timeout=10)
         r.raise_for_status()
         data = r.json()
 
@@ -280,7 +291,7 @@ def get_movie():
     """
     Get movie video sources
     Required: id
-    Example: /api/movie?id=12345
+    Example: /api/movie?id=4191963760367656968
     """
     movie_id = request.args.get("id")
 
@@ -289,7 +300,7 @@ def get_movie():
             "status": 400,
             "success": False,
             "message": "movie id required",
-            "example": "/api/movie?id=12345",
+            "example": "/api/movie?id=4191963760367656968",
             "creator": CREATOR["name"],
             "whatsapp_channel": CREATOR["channel"]
         }), 400
@@ -298,7 +309,8 @@ def get_movie():
 
     try:
         print(f"Fetching movie: ID={movie_id}")
-        r = requests.get(url, timeout=10)
+        # Use vid headers to avoid 403 error - THIS FIXES THE ISSUE
+        r = requests.get(url, headers=get_vid_headers(), timeout=10)
         r.raise_for_status()
         data = r.json()
 
@@ -335,7 +347,7 @@ def get_movie():
 def get_sources(movie_id):
     """
     Get sources by movie ID
-    For movies: /api/sources/12345
+    For movies: /api/sources/4191963760367656968
     For series: /api/sources/12345?season=1&episode=1
     """
     season = request.args.get("season")
@@ -351,7 +363,8 @@ def get_sources(movie_id):
     
     try:
         print(f"Fetching sources for ID: {movie_id} (type: {content_type})")
-        r = requests.get(url, timeout=10)
+        # Use vid headers to avoid 403 error
+        r = requests.get(url, headers=get_vid_headers(), timeout=10)
         r.raise_for_status()
         data = r.json()
         
@@ -425,7 +438,8 @@ def search_movies():
 
     try:
         print(f"Searching for: '{query}', page {page}")
-        response = requests.get(url, headers=get_search_headers(), timeout=10)
+        # Use vid headers for search as well
+        response = requests.get(url, headers=get_vid_headers(), timeout=10)
         response.raise_for_status()
         data = response.json()
 
@@ -493,7 +507,7 @@ def about():
         "message": "Movie API - Built with ❤️ by Nabees",
         "channel": CREATOR["channel"],
         "categories_count": len(CATEGORIES),
-        "version": "7.0"
+        "version": "7.1"
     })
 
 @app.route('/health', methods=['GET'])
@@ -510,7 +524,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     
     print("=" * 70)
-    print("🎬 NABEES MOVIE API - COMPLETE EDITION v7.0")
+    print("🎬 NABEES MOVIE API - COMPLETE EDITION v7.1")
     print("=" * 70)
     print(f"👤 Creator: {CREATOR['name']}")
     print(f"📱 Channel: {CREATOR['channel']}")
@@ -526,7 +540,7 @@ if __name__ == "__main__":
     print("   🔍 SEARCH:")
     print("      └─ /api/search?q=<query>&page=1 - Search movies & series")
     print("")
-    print("   🎬 VIDEO SOURCES:")
+    print("   🎬 VIDEO SOURCES (403 FIXED ✅):")
     print("      ├─ /api/movie?id=XXX - 🍿 GET MOVIE (id only)")
     print("      ├─ /api/series?id=XXX&season=1&episode=1 - 📺 GET SERIES")
     print("      └─ /api/sources/<movie_id> - 🔗 GET SOURCES (works for both)")
@@ -538,7 +552,7 @@ if __name__ == "__main__":
     print("=" * 70)
     print("📝 EXAMPLES:")
     print("   • Search:    curl http://localhost:10000/api/search?q=avengers")
-    print("   • Movie:     curl http://localhost:10000/api/movie?id=12345")
+    print("   • Movie:     curl http://localhost:10000/api/movie?id=4191963760367656968")
     print("   • Series:    curl http://localhost:10000/api/series?id=12345&season=1&episode=1")
     print("   • K-Drama:   curl http://localhost:10000/movies/k-drama?page=1")
     print("=" * 70)
