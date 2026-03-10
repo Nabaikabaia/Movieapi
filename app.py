@@ -14,6 +14,10 @@ CREATOR = {
     "github": None
 }
 
+# Base URL for video sources
+VIDEO_BASE_URL = "https://vid.davidxtech.de/api/sources"
+SEARCH_BASE_URL = "https://vid.davidxtech.de/api/search"
+
 # Dictionary with all your movie categories
 CATEGORIES = {
     "anime": "62133389738001440",
@@ -54,7 +58,7 @@ CATEGORY_INFO = {
     "indian": {"name": "South Indian Movies", "region": "India", "type": "Movies", "flag": "🇮🇳"}
 }
 
-# Headers for API requests
+# Headers for category API requests
 def get_headers():
     return {
         "Accept": "application/json",
@@ -64,23 +68,52 @@ def get_headers():
         "X-Request-Lang": "en"
     }
 
+# Headers for search API
+def get_search_headers():
+    return {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json"
+    }
+
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({
         "success": True,
         "creator": CREATOR,
-        "message": "🎬 Nabees Movie Categories API - Your Ultimate Global Movie Database",
-        "version": "5.1",
+        "message": "🎬 Nabees Movie API - Your Ultimate Global Movie Database",
+        "version": "7.0",
         "total_categories": len(CATEGORIES),
         "endpoints": {
-            "/movies/<category>": "Get movies by category",
+            # Category endpoints
+            "/movies/<category>": "Get movies by category (e.g., /movies/k-drama)",
             "/categories": "List all available categories",
+            
+            # Video source endpoints
+            "/api/series": "GET /api/series?id=XXX&season=1&episode=1 - Get series video sources",
+            "/api/movie": "GET /api/movie?id=XXX - Get movie video sources",
+            "/api/sources/<movie_id>": "GET /api/sources/12345?season=1&episode=1 - Get sources by ID",
+            
+            # Search endpoint
+            "/api/search": "GET /api/search?q=avengers&page=1 - Search for movies and series",
+            
+            # Info endpoints
             "/about": "About the creator",
             "/health": "Health check endpoint",
-            "/search?q=<query>": "Search for categories"
+            "/search": "GET /search?q=anime - Search for categories"
+        },
+        "examples": {
+            "search_movies": "/api/search?q=avengers&page=1",
+            "get_series": "/api/series?id=12345&season=1&episode=1",
+            "get_movie": "/api/movie?id=12345",
+            "get_sources_movie": "/api/sources/12345",
+            "get_sources_series": "/api/sources/12345?season=1&episode=1",
+            "get_category": "/movies/k-drama?page=1&perPage=20",
+            "search_categories": "/search?q=korea"
         },
         "available_categories": list(CATEGORIES.keys())
     })
+
+# ============ CATEGORY ENDPOINTS ============
 
 @app.route('/movies/<category>', methods=['GET'])
 def get_movies(category):
@@ -155,27 +188,8 @@ def list_categories():
         "categories": categories_list
     })
 
-@app.route('/about', methods=['GET'])
-def about():
-    return jsonify({
-        "success": True,
-        "creator": CREATOR,
-        "message": "Movie Categories API - Built with ❤️ by Nabees",
-        "channel": CREATOR["channel"],
-        "categories_count": len(CATEGORIES)
-    })
-
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({
-        "success": True,
-        "creator": CREATOR,
-        "status": "healthy",
-        "timestamp": time.time()
-    })
-
 @app.route('/search', methods=['GET'])
-def search():
+def search_categories():
     query = request.args.get("q", "").lower()
     if not query or len(query) < 2:
         return jsonify({"success": False, "error": "Query too short"}), 400
@@ -199,20 +213,337 @@ def search():
         "results": results
     })
 
+# ============ VIDEO SOURCE ENDPOINTS ============
+
+@app.route("/api/series", methods=['GET'])
+def get_series():
+    """
+    Get series video sources
+    Required: id, season, episode
+    Example: /api/series?id=12345&season=1&episode=1
+    """
+    movie_id = request.args.get("id")
+    season = request.args.get("season")
+    episode = request.args.get("episode")
+
+    if not movie_id or not season or not episode:
+        return jsonify({
+            "status": 400,
+            "success": False,
+            "message": "id, season and episode are required",
+            "example": "/api/series?id=12345&season=1&episode=1",
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"]
+        }), 400
+
+    url = f"{VIDEO_BASE_URL}/{movie_id}?season={season}&episode={episode}"
+
+    try:
+        print(f"Fetching series: ID={movie_id}, S{season}E{episode}")
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+
+        return jsonify({
+            "status": 200,
+            "success": True,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "type": "series",
+            "movie_id": movie_id,
+            "season": season,
+            "episode": episode,
+            "results": data.get("results"),
+            "subtitles": data.get("subtitles")
+        })
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "error": f"Failed to fetch series: {str(e)}"
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "error": str(e)
+        }), 500
+
+
+@app.route("/api/movie", methods=['GET'])
+def get_movie():
+    """
+    Get movie video sources
+    Required: id
+    Example: /api/movie?id=12345
+    """
+    movie_id = request.args.get("id")
+
+    if not movie_id:
+        return jsonify({
+            "status": 400,
+            "success": False,
+            "message": "movie id required",
+            "example": "/api/movie?id=12345",
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"]
+        }), 400
+
+    url = f"{VIDEO_BASE_URL}/{movie_id}"
+
+    try:
+        print(f"Fetching movie: ID={movie_id}")
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+
+        return jsonify({
+            "status": 200,
+            "success": True,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "type": "movie",
+            "movie_id": movie_id,
+            "results": data.get("results"),
+            "subtitles": data.get("subtitles")
+        })
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "error": f"Failed to fetch movie: {str(e)}"
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "error": str(e)
+        }), 500
+
+
+@app.route("/api/sources/<movie_id>", methods=['GET'])
+def get_sources(movie_id):
+    """
+    Get sources by movie ID
+    For movies: /api/sources/12345
+    For series: /api/sources/12345?season=1&episode=1
+    """
+    season = request.args.get("season")
+    episode = request.args.get("episode")
+    
+    # Build URL based on whether season/episode are provided
+    url = f"{VIDEO_BASE_URL}/{movie_id}"
+    if season and episode:
+        url += f"?season={season}&episode={episode}"
+        content_type = "series"
+    else:
+        content_type = "movie"
+    
+    try:
+        print(f"Fetching sources for ID: {movie_id} (type: {content_type})")
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        
+        # Add creator info to response
+        return jsonify({
+            "status": 200,
+            "success": True,
+            "creator": CREATOR["name"],
+            "channel": CREATOR["channel"],
+            "type": content_type,
+            "movie_id": movie_id,
+            "season": season if season else None,
+            "episode": episode if episode else None,
+            "results": data.get("results"),
+            "subtitles": data.get("subtitles")
+        })
+        
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "channel": CREATOR["channel"],
+            "error": f"Failed to fetch sources: {str(e)}"
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "channel": CREATOR["channel"],
+            "error": str(e)
+        }), 500
+
+
+# ============ SEARCH ENDPOINT ============
+
+@app.route("/api/search", methods=['GET'])
+def search_movies():
+    """
+    Search for movies and series by title
+    Required: q (query)
+    Optional: page (default: 1)
+    Example: /api/search?q=avengers&page=1
+    """
+    query = request.args.get("q")
+    page = request.args.get("page", 1)
+
+    if not query:
+        return jsonify({
+            "status": 400,
+            "success": False,
+            "message": "search query (q) is required",
+            "example": "/api/search?q=avengers&page=1",
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"]
+        }), 400
+
+    try:
+        page = int(page)
+    except ValueError:
+        return jsonify({
+            "status": 400,
+            "success": False,
+            "message": "page must be a number",
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"]
+        }), 400
+
+    url = f"{SEARCH_BASE_URL}/{query}/?page={page}"
+
+    try:
+        print(f"Searching for: '{query}', page {page}")
+        response = requests.get(url, headers=get_search_headers(), timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        # Format the results
+        formatted_results = []
+        items = data.get("results", {}).get("items", [])
+
+        for item in items:
+            # Determine content type (subjectType: 2 = Series, others = Movie)
+            content_type = "Series" if item.get("subjectType") == 2 else "Movie"
+            
+            movie = {
+                "title": item.get("title"),
+                "type": content_type,
+                "genre": item.get("genre"),
+                "release_date": item.get("releaseDate"),
+                "country": item.get("countryName"),
+                "imdb_rating": item.get("imdbRatingValue"),
+                "thumbnail": item.get("thumbnail"),
+                "detail_path": item.get("detailPath"),
+                "subject_id": item.get("subjectId"),
+                "description": item.get("descriptionShort")
+            }
+            
+            # Only add if we have essential data
+            if movie["title"] and movie["subject_id"]:
+                formatted_results.append(movie)
+
+        return jsonify({
+            "status": 200,
+            "success": True,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "query": query,
+            "page": page,
+            "total_results": len(formatted_results),
+            "results": formatted_results
+        })
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "error": f"Failed to search: {str(e)}"
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "error": str(e)
+        }), 500
+
+
+# ============ INFO ENDPOINTS ============
+
+@app.route('/about', methods=['GET'])
+def about():
+    return jsonify({
+        "success": True,
+        "creator": CREATOR,
+        "message": "Movie API - Built with ❤️ by Nabees",
+        "channel": CREATOR["channel"],
+        "categories_count": len(CATEGORIES),
+        "version": "7.0"
+    })
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        "success": True,
+        "creator": CREATOR,
+        "status": "healthy",
+        "timestamp": time.time()
+    })
+
 if __name__ == "__main__":
-    # CRITICAL FIX: Use PORT from environment, default to 10000
+    # Use PORT from environment, default to 10000
     port = int(os.environ.get("PORT", 10000))
     
-    print("=" * 60)
-    print("🌍 GLOBAL MOVIE API")
-    print("=" * 60)
+    print("=" * 70)
+    print("🎬 NABEES MOVIE API - COMPLETE EDITION v7.0")
+    print("=" * 70)
     print(f"👤 Creator: {CREATOR['name']}")
     print(f"📱 Channel: {CREATOR['channel']}")
     print(f"📡 Port: {port}")
     print(f"🎯 Categories: {len(CATEGORIES)}")
-    print("=" * 60)
+    print("=" * 70)
+    print("🚀 ENDPOINTS:")
+    print("   📂 CATEGORIES:")
+    print("      ├─ /categories - List all categories")
+    print("      ├─ /movies/<category> - Get movies by category")
+    print("      └─ /search?q=<query> - Search categories")
+    print("")
+    print("   🔍 SEARCH:")
+    print("      └─ /api/search?q=<query>&page=1 - Search movies & series")
+    print("")
+    print("   🎬 VIDEO SOURCES:")
+    print("      ├─ /api/movie?id=XXX - 🍿 GET MOVIE (id only)")
+    print("      ├─ /api/series?id=XXX&season=1&episode=1 - 📺 GET SERIES")
+    print("      └─ /api/sources/<movie_id> - 🔗 GET SOURCES (works for both)")
+    print("")
+    print("   ℹ️  INFO:")
+    print("      ├─ / - Home page")
+    print("      ├─ /about - About creator")
+    print("      └─ /health - Health check")
+    print("=" * 70)
+    print("📝 EXAMPLES:")
+    print("   • Search:    curl http://localhost:10000/api/search?q=avengers")
+    print("   • Movie:     curl http://localhost:10000/api/movie?id=12345")
+    print("   • Series:    curl http://localhost:10000/api/series?id=12345&season=1&episode=1")
+    print("   • K-Drama:   curl http://localhost:10000/movies/k-drama?page=1")
+    print("=" * 70)
     print("🚀 Server starting...")
-    print("=" * 60)
+    print("=" * 70)
     
     # Bind to 0.0.0.0 to accept all connections
     app.run(host='0.0.0.0', port=port, debug=False)
