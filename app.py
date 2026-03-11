@@ -17,6 +17,7 @@ CREATOR = {
 # Base URL for video sources
 VIDEO_BASE_URL = "https://vid.davidxtech.de/api/sources"
 SEARCH_BASE_URL = "https://vid.davidxtech.de/api/search"
+INFO_BASE_URL = "https://vid.davidxtech.de/api/info"
 
 # Dictionary with all your movie categories
 CATEGORIES = {
@@ -91,7 +92,7 @@ def home():
         "success": True,
         "creator": CREATOR,
         "message": "🎬 Nabees Movie API - Your Ultimate Global Movie Database",
-        "version": "7.1",
+        "version": "7.2",
         "total_categories": len(CATEGORIES),
         "endpoints": {
             # Category endpoints
@@ -102,6 +103,9 @@ def home():
             "/api/series": "GET /api/series?id=XXX&season=1&episode=1 - Get series video sources",
             "/api/movie": "GET /api/movie?id=XXX - Get movie video sources",
             "/api/sources/<movie_id>": "GET /api/sources/12345?season=1&episode=1 - Get sources by ID",
+            
+            # Movie info endpoint (NEW)
+            "/api/info/<movie_id>": "GET /api/info/1216407338207298384 - Get detailed movie/series info",
             
             # Search endpoint
             "/api/search": "GET /api/search?q=avengers&page=1 - Search for movies and series",
@@ -117,6 +121,7 @@ def home():
             "get_movie": "/api/movie?id=4191963760367656968",
             "get_sources_movie": "/api/sources/4191963760367656968",
             "get_sources_series": "/api/sources/12345?season=1&episode=1",
+            "get_movie_info": "/api/info/1216407338207298384",
             "get_category": "/movies/k-drama?page=1&perPage=20",
             "search_categories": "/search?q=korea"
         },
@@ -309,7 +314,7 @@ def get_movie():
 
     try:
         print(f"Fetching movie: ID={movie_id}")
-        # Use vid headers to avoid 403 error - THIS FIXES THE ISSUE
+        # Use vid headers to avoid 403 error
         r = requests.get(url, headers=get_vid_headers(), timeout=10)
         r.raise_for_status()
         data = r.json()
@@ -396,6 +401,58 @@ def get_sources(movie_id):
             "success": False,
             "creator": CREATOR["name"],
             "channel": CREATOR["channel"],
+            "error": str(e)
+        }), 500
+
+
+# ============ MOVIE INFO ENDPOINT (NEW) ============
+
+@app.route("/api/info/<movie_id>", methods=['GET'])
+def get_movie_info(movie_id):
+    """
+    Get detailed information about a movie or series by ID
+    Includes: title, description, cast, seasons, ratings, etc.
+    Example: /api/info/1216407338207298384
+    """
+    if not movie_id:
+        return jsonify({
+            "status": 400,
+            "success": False,
+            "message": "movie_id is required",
+            "example": "/api/info/1216407338207298384",
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"]
+        }), 400
+
+    url = f"{INFO_BASE_URL}/{movie_id}"
+
+    try:
+        print(f"Fetching movie info for ID: {movie_id}")
+        # Use vid headers to avoid 403 error
+        response = requests.get(url, headers=get_vid_headers(), timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        # Add your creator info to the response
+        data["nabees_creator"] = CREATOR["name"]
+        data["nabees_channel"] = CREATOR["channel"]
+
+        return jsonify(data)
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
+            "error": f"Failed to fetch movie info: {str(e)}"
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "status": 500,
+            "success": False,
+            "creator": CREATOR["name"],
+            "whatsapp_channel": CREATOR["channel"],
             "error": str(e)
         }), 500
 
@@ -507,7 +564,7 @@ def about():
         "message": "Movie API - Built with ❤️ by Nabees",
         "channel": CREATOR["channel"],
         "categories_count": len(CATEGORIES),
-        "version": "7.1"
+        "version": "7.2"
     })
 
 @app.route('/health', methods=['GET'])
@@ -524,7 +581,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     
     print("=" * 70)
-    print("🎬 NABEES MOVIE API - COMPLETE EDITION v7.1")
+    print("🎬 NABEES MOVIE API - COMPLETE EDITION v7.2")
     print("=" * 70)
     print(f"👤 Creator: {CREATOR['name']}")
     print(f"📱 Channel: {CREATOR['channel']}")
@@ -540,6 +597,9 @@ if __name__ == "__main__":
     print("   🔍 SEARCH:")
     print("      └─ /api/search?q=<query>&page=1 - Search movies & series")
     print("")
+    print("   ℹ️  MOVIE INFO (NEW!):")
+    print("      └─ /api/info/<movie_id> - Get detailed movie/series info")
+    print("")
     print("   🎬 VIDEO SOURCES (403 FIXED ✅):")
     print("      ├─ /api/movie?id=XXX - 🍿 GET MOVIE (id only)")
     print("      ├─ /api/series?id=XXX&season=1&episode=1 - 📺 GET SERIES")
@@ -551,10 +611,11 @@ if __name__ == "__main__":
     print("      └─ /health - Health check")
     print("=" * 70)
     print("📝 EXAMPLES:")
-    print("   • Search:    curl http://localhost:10000/api/search?q=avengers")
-    print("   • Movie:     curl http://localhost:10000/api/movie?id=4191963760367656968")
-    print("   • Series:    curl http://localhost:10000/api/series?id=12345&season=1&episode=1")
-    print("   • K-Drama:   curl http://localhost:10000/movies/k-drama?page=1")
+    print("   • Movie Info: curl http://localhost:10000/api/info/1216407338207298384")
+    print("   • Search:     curl http://localhost:10000/api/search?q=avengers")
+    print("   • Movie:      curl http://localhost:10000/api/movie?id=4191963760367656968")
+    print("   • Series:     curl http://localhost:10000/api/series?id=12345&season=1&episode=1")
+    print("   • K-Drama:    curl http://localhost:10000/movies/k-drama?page=1")
     print("=" * 70)
     print("🚀 Server starting...")
     print("=" * 70)
