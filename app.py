@@ -36,7 +36,15 @@ CATEGORIES = {
     "popular": "997144265920760504",
     "showmax": "2076266324048625696",
     "turkish": "9193088611682599936",
-    "indian": "3859721901924910512"
+    "indian": "3859721901924910512",
+    "hot": "997144265920760504",
+    "horror": "horror_genre",      # Horror genre (filter endpoint)
+    "war": "war_genre",             # War genre (filter endpoint)
+    "thriller": "thriller_genre",   # Thriller genre (filter endpoint)
+    "comedy": "comedy_genre",        # Comedy genre (filter endpoint)
+    "scifi": "scifi_genre",          # Sci-Fi genre (filter endpoint)
+    "romance": "romance_genre",      # Romance genre (filter endpoint)
+    "family": "family_genre"         # Family genre (filter endpoint)
 }
 
 # Category metadata
@@ -56,7 +64,15 @@ CATEGORY_INFO = {
     "popular": {"name": "Popular Movies 2025", "region": "Various", "type": "Movies", "flag": "⭐"},
     "showmax": {"name": "Showmax Originals", "region": "Africa", "type": "Originals", "flag": "📱"},
     "turkish": {"name": "Turkish Drama", "region": "Turkey", "type": "TV Series", "flag": "🇹🇷"},
-    "indian": {"name": "South Indian Movies", "region": "India", "type": "Movies", "flag": "🇮🇳"}
+    "indian": {"name": "South Indian Movies", "region": "India", "type": "Movies", "flag": "🇮🇳"},
+    "hot": {"name": "Hot Movies 2025", "region": "Global", "type": "Movies", "flag": "🔥"},
+    "horror": {"name": "Horror", "region": "Global", "type": "Movies & Series", "flag": "👻"},
+    "war": {"name": "War", "region": "Global", "type": "Movies & Series", "flag": "⚔️"},
+    "thriller": {"name": "Thriller", "region": "Global", "type": "Movies & Series", "flag": "🔪"},
+    "comedy": {"name": "Comedy", "region": "Global", "type": "Movies & Series", "flag": "😂"},
+    "scifi": {"name": "Sci-Fi", "region": "Global", "type": "Movies & Series", "flag": "🚀"},
+    "romance": {"name": "Romance", "region": "Global", "type": "Movies & Series", "flag": "❤️"},
+    "family": {"name": "Family", "region": "Global", "type": "Movies & Series", "flag": "👪"}
 }
 
 # Headers for category API requests (aoneroom.com)
@@ -92,19 +108,22 @@ def home():
         "success": True,
         "creator": CREATOR,
         "message": "🎬 Nabees Movie API - Your Ultimate Global Movie Database",
-        "version": "7.2",
+        "version": "8.0",
         "total_categories": len(CATEGORIES),
         "endpoints": {
             # Category endpoints
             "/movies/<category>": "Get movies by category (e.g., /movies/k-drama)",
             "/categories": "List all available categories",
             
+            # Genre endpoints
+            "/genre/<genre_name>": "Get by genre (e.g., /genre/horror, /genre/comedy, /genre/family)",
+            
             # Video source endpoints
             "/api/series": "GET /api/series?id=XXX&season=1&episode=1 - Get series video sources",
             "/api/movie": "GET /api/movie?id=XXX - Get movie video sources",
             "/api/sources/<movie_id>": "GET /api/sources/12345?season=1&episode=1 - Get sources by ID",
             
-            # Movie info endpoint (NEW)
+            # Movie info endpoint
             "/api/info/<movie_id>": "GET /api/info/1216407338207298384 - Get detailed movie/series info",
             
             # Search endpoint
@@ -122,7 +141,14 @@ def home():
             "get_sources_movie": "/api/sources/4191963760367656968",
             "get_sources_series": "/api/sources/12345?season=1&episode=1",
             "get_movie_info": "/api/info/1216407338207298384",
-            "get_category": "/movies/k-drama?page=1&perPage=20",
+            "get_category": "/movies/hot?page=1&perPage=20",
+            "get_genre_horror": "/genre/horror?page=1&perPage=28",
+            "get_genre_war": "/genre/war?page=1&perPage=28",
+            "get_genre_thriller": "/genre/thriller?page=1&perPage=28",
+            "get_genre_comedy": "/genre/comedy?page=1&perPage=28",
+            "get_genre_scifi": "/genre/scifi?page=1&perPage=28",
+            "get_genre_romance": "/genre/romance?page=1&perPage=28",
+            "get_genre_family": "/genre/family?page=1&perPage=28",
             "search_categories": "/search?q=korea"
         },
         "available_categories": list(CATEGORIES.keys())
@@ -181,11 +207,113 @@ def get_movies(category):
             "error": str(e)
         }), 500
 
+# ============ GENRE ENDPOINTS ============
+
+@app.route('/genre/<genre_name>', methods=['GET'])
+def get_genre(genre_name):
+    """
+    Get movies/series by genre
+    Available genres: horror, war, thriller, comedy, scifi, romance, family
+    Example: /genre/horror?page=1&perPage=28
+    """
+    # Map genre names to API genre values
+    genre_map = {
+        "horror": "Horror",
+        "war": "War",
+        "thriller": "Thriller",
+        "comedy": "Comedy",
+        "scifi": "Sci-Fi",
+        "romance": "Romance",
+        "family": "Family",
+        "action": "Action",
+        "drama": "Drama",
+        # Add more as needed
+    }
+    
+    if genre_name not in genre_map:
+        return jsonify({
+            "success": False,
+            "creator": CREATOR,
+            "error": f"Genre '{genre_name}' not supported",
+            "available_genres": list(genre_map.keys())
+        }), 404
+    
+    genre = genre_map[genre_name]
+    page = request.args.get("page", 1)
+    per_page = request.args.get("perPage", 28)
+    
+    try:
+        page = int(page)
+        per_page = int(per_page)
+        if per_page > 50:
+            per_page = 50
+    except ValueError:
+        return jsonify({"success": False, "error": "Invalid page value"}), 400
+    
+    url = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/filter"
+    
+    # POST request with JSON body
+    payload = {
+        "page": page,
+        "perPage": per_page,
+        "channelId": 2,
+        "genre": genre
+    }
+    
+    try:
+        print(f"Fetching {genre_name} genre...")
+        response = requests.post(url, json=payload, headers=get_category_headers(), timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("code") != 0:
+            return jsonify({"success": False, "error": "API error"}), 500
+        
+        # Genre flag mapping
+        genre_flags = {
+            "horror": "👻",
+            "war": "⚔️",
+            "thriller": "🔪",
+            "comedy": "😂",
+            "scifi": "🚀",
+            "romance": "❤️",
+            "family": "👪",
+            "action": "💥",
+            "drama": "🎭"
+        }
+        
+        return jsonify({
+            "success": True,
+            "creator": CREATOR,
+            "genre": genre_name,
+            "genre_info": {
+                "name": genre,
+                "flag": genre_flags.get(genre_name, "🎬")
+            },
+            "page": page,
+            "data": data.get("data", {})
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "creator": CREATOR,
+            "error": str(e)
+        }), 500
+
 @app.route('/categories', methods=['GET'])
 def list_categories():
     categories_list = []
     for name, id in CATEGORIES.items():
         info = CATEGORY_INFO.get(name, {"name": name, "flag": "🎬"})
+        
+        # Determine endpoint type
+        genre_categories = ["horror", "war", "thriller", "comedy", "scifi", "romance", "family"]
+        if name in genre_categories:
+            endpoint = f"/genre/{name}"
+        else:
+            endpoint = f"/movies/{name}"
+            
         categories_list.append({
             "key": name,
             "name": info["name"],
@@ -193,7 +321,7 @@ def list_categories():
             "id": id,
             "region": info.get("region", "Unknown"),
             "type": info.get("type", "Unknown"),
-            "endpoint": f"/movies/{name}"
+            "endpoint": endpoint
         })
     
     return jsonify({
@@ -213,11 +341,18 @@ def search_categories():
     for category in CATEGORIES.keys():
         info = CATEGORY_INFO.get(category, {"name": category})
         if query in category.lower() or query in info["name"].lower():
+            # Determine endpoint type
+            genre_categories = ["horror", "war", "thriller", "comedy", "scifi", "romance", "family"]
+            if category in genre_categories:
+                endpoint = f"/genre/{category}"
+            else:
+                endpoint = f"/movies/{category}"
+                
             results.append({
                 "category": category,
                 "name": info["name"],
                 "flag": info.get("flag", "🎬"),
-                "endpoint": f"/movies/{category}"
+                "endpoint": endpoint
             })
     
     return jsonify({
@@ -405,7 +540,7 @@ def get_sources(movie_id):
         }), 500
 
 
-# ============ MOVIE INFO ENDPOINT (NEW) ============
+# ============ MOVIE INFO ENDPOINT ============
 
 @app.route("/api/info/<movie_id>", methods=['GET'])
 def get_movie_info(movie_id):
@@ -564,7 +699,7 @@ def about():
         "message": "Movie API - Built with ❤️ by Nabees",
         "channel": CREATOR["channel"],
         "categories_count": len(CATEGORIES),
-        "version": "7.2"
+        "version": "8.0"
     })
 
 @app.route('/health', methods=['GET'])
@@ -581,12 +716,12 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     
     print("=" * 70)
-    print("🎬 NABEES MOVIE API - COMPLETE EDITION v7.2")
+    print("🎬 NABEES MOVIE API - COMPLETE EDITION v8.0")
     print("=" * 70)
     print(f"👤 Creator: {CREATOR['name']}")
     print(f"📱 Channel: {CREATOR['channel']}")
     print(f"📡 Port: {port}")
-    print(f"🎯 Categories: {len(CATEGORIES)}")
+    print(f"🎯 Total Categories: {len(CATEGORIES)}")
     print("=" * 70)
     print("🚀 ENDPOINTS:")
     print("   📂 CATEGORIES:")
@@ -594,10 +729,19 @@ if __name__ == "__main__":
     print("      ├─ /movies/<category> - Get movies by category")
     print("      └─ /search?q=<query> - Search categories")
     print("")
+    print("   🎭 GENRE FILTERS:")
+    print("      ├─ /genre/horror?page=1 - 👻 Horror")
+    print("      ├─ /genre/war?page=1 - ⚔️ War")
+    print("      ├─ /genre/thriller?page=1 - 🔪 Thriller")
+    print("      ├─ /genre/comedy?page=1 - 😂 Comedy")
+    print("      ├─ /genre/scifi?page=1 - 🚀 Sci-Fi")
+    print("      ├─ /genre/romance?page=1 - ❤️ Romance")
+    print("      └─ /genre/family?page=1 - 👪 Family")
+    print("")
     print("   🔍 SEARCH:")
     print("      └─ /api/search?q=<query>&page=1 - Search movies & series")
     print("")
-    print("   ℹ️  MOVIE INFO (NEW!):")
+    print("   ℹ️  MOVIE INFO:")
     print("      └─ /api/info/<movie_id> - Get detailed movie/series info")
     print("")
     print("   🎬 VIDEO SOURCES (403 FIXED ✅):")
@@ -611,11 +755,16 @@ if __name__ == "__main__":
     print("      └─ /health - Health check")
     print("=" * 70)
     print("📝 EXAMPLES:")
+    print("   • Horror:   curl http://localhost:10000/genre/horror?page=1")
+    print("   • War:      curl http://localhost:10000/genre/war?page=1")
+    print("   • Thriller: curl http://localhost:10000/genre/thriller?page=1")
+    print("   • Comedy:   curl http://localhost:10000/genre/comedy?page=1")
+    print("   • Sci-Fi:   curl http://localhost:10000/genre/scifi?page=1")
+    print("   • Romance:  curl http://localhost:10000/genre/romance?page=1")
+    print("   • Family:   curl http://localhost:10000/genre/family?page=1")
+    print("   • Hot:      curl http://localhost:10000/movies/hot?page=1")
     print("   • Movie Info: curl http://localhost:10000/api/info/1216407338207298384")
-    print("   • Search:     curl http://localhost:10000/api/search?q=avengers")
-    print("   • Movie:      curl http://localhost:10000/api/movie?id=4191963760367656968")
-    print("   • Series:     curl http://localhost:10000/api/series?id=12345&season=1&episode=1")
-    print("   • K-Drama:    curl http://localhost:10000/movies/k-drama?page=1")
+    print("   • Search:   curl http://localhost:10000/api/search?q=avengers")
     print("=" * 70)
     print("🚀 Server starting...")
     print("=" * 70)
