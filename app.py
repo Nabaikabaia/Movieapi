@@ -21,7 +21,7 @@ BRANDING = {
     "github": "https://github.com/Nabaikabaia",
     "support_email": "nabees.dev@gmail.com",
     "api_name": "Nabees Movie API",
-    "api_version": "2.5.0",
+    "api_version": "3.0.0",
     "powered_by": "Nabees Tech Labs",
     "copyright": "© 2026-2099 Nabees Tech. All rights reserved.",
     "tagline": "Streaming made simple, fast, and free! 🚀"
@@ -78,6 +78,8 @@ CAPTION_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/caption"
 DETAIL_REC_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/detail-rec"
 DETAIL_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/detail"
 SEARCH_URL = "https://vid.davidxtech.de/api/search"
+POPULAR_SEARCH_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/everyone-search"
+SEARCH_SUGGEST_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/search-suggest"
 
 # Headers for category API requests
 def get_category_headers():
@@ -247,22 +249,24 @@ def fetch_detail_path(subject_id):
         if data.get("code") == 0 and data.get("data", {}).get("items"):
             items = data["data"]["items"]
             
-            # Find the exact item that matches the requested subjectId
             for item in items:
                 if str(item.get("subjectId")) == str(subject_id):
                     return {
                         "detailPath": item.get("detailPath"),
-                        "subjectType": item.get("subjectType")
+                        "subjectType": item.get("subjectType"),
+                        "title": item.get("title"),
+                        "description": item.get("description"),
+                        "cover": item.get("cover")
                     }
             
-            # If no exact match, try to find by checking the first item (for series that work)
-            # This is a fallback for cases where the exact match isn't found
             if items:
-                print(f"Warning: Exact subjectId {subject_id} not found, using first item: {items[0].get('title')}")
                 first_item = items[0]
                 return {
                     "detailPath": first_item.get("detailPath"),
-                    "subjectType": first_item.get("subjectType")
+                    "subjectType": first_item.get("subjectType"),
+                    "title": first_item.get("title"),
+                    "description": first_item.get("description"),
+                    "cover": first_item.get("cover")
                 }
         
         return None
@@ -291,6 +295,40 @@ def fetch_complete_details(detail_path):
     except Exception as e:
         print(f"Error fetching complete details for {detail_path}: {e}")
         return None
+
+def fetch_recommendations(subject_id):
+    """Fetch you may also like recommendations"""
+    params = {
+        "subjectId": subject_id,
+        "page": 0,
+        "perPage": 0
+    }
+    
+    try:
+        response = requests.get(DETAIL_REC_URL, headers=get_category_headers(), params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("code") == 0 and data.get("data", {}).get("items"):
+            items = data["data"]["items"]
+            # Filter out the current item if needed
+            recommendations = []
+            for item in items:
+                if str(item.get("subjectId")) != str(subject_id):
+                    recommendations.append({
+                        "subjectId": item.get("subjectId"),
+                        "title": item.get("title"),
+                        "cover": item.get("cover"),
+                        "detailPath": item.get("detailPath"),
+                        "genre": item.get("genre"),
+                        "year": item.get("releaseDate", "").split("-")[0] if item.get("releaseDate") else "",
+                        "imdbRating": item.get("imdbRatingValue")
+                    })
+            return recommendations[:20]  # Limit to 20 recommendations
+        return []
+    except Exception as e:
+        print(f"Error fetching recommendations: {e}")
+        return []
 
 # ============================================
 # PROXY ENDPOINTS
@@ -372,7 +410,6 @@ def download_subtitle():
 # ============================================
 @app.route("/categories", methods=["GET"])
 def list_categories():
-    """List all available categories with their info"""
     categories_list = []
     for name, cat_id in CATEGORIES.items():
         info = CATEGORY_INFO.get(name, {"name": name, "flag": "🎬", "region": "Various", "type": "Mixed"})
@@ -393,7 +430,6 @@ def list_categories():
 
 @app.route("/movies/<category>", methods=["GET"])
 def get_movies_by_category(category):
-    """Get movies/series by category"""
     if category not in CATEGORIES:
         error_response = {"error": "Category not found", "available_categories": list(CATEGORIES.keys())}
         return app.response_class(
@@ -457,7 +493,6 @@ def get_movies_by_category(category):
 
 @app.route("/genre/<genre_name>", methods=["GET"])
 def get_by_genre(genre_name):
-    """Get movies/series by genre (horror, war, thriller, comedy, scifi, romance, family)"""
     genre_map = {
         "horror": "Horror", "war": "War", "thriller": "Thriller",
         "comedy": "Comedy", "scifi": "Sci-Fi", "romance": "Romance", "family": "Family"
@@ -530,7 +565,6 @@ def get_by_genre(genre_name):
 # ============================================
 @app.route("/search", methods=["GET"])
 def search_movies():
-    """Search for movies and series by title"""
     query = request.args.get("q")
     page = request.args.get("page", 1)
     
@@ -604,102 +638,144 @@ def search_movies():
         )
 
 # ============================================
-# DETAILS ENDPOINT - WITH DETAILPATH SUPPORT
+# POPULAR SEARCHES ENDPOINT
+# ============================================
+@app.route("/popular-searches", methods=["GET"])
+def popular_searches():
+    """Get popular searches from everyone-search endpoint"""
+    try:
+        response = requests.get(POPULAR_SEARCH_URL, headers=get_category_headers(), timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("code") == 0 and data.get("data", {}).get("everyoneSearch"):
+            popular = data["data"]["everyoneSearch"]
+            result_data = {
+                "popular_searches": popular
+            }
+            return app.response_class(
+                response=json.dumps(add_branding(result_data), ensure_ascii=False),
+                status=200,
+                mimetype='application/json'
+            )
+        else:
+            error_response = {"error": "Failed to fetch popular searches"}
+            return app.response_class(
+                response=json.dumps(add_branding(error_response), ensure_ascii=False),
+                status=500,
+                mimetype='application/json'
+            )
+    except Exception as e:
+        error_response = {"error": str(e)}
+        return app.response_class(
+            response=json.dumps(add_branding(error_response), ensure_ascii=False),
+            status=500,
+            mimetype='application/json'
+        )
+
+# ============================================
+# SEARCH SUGGEST ENDPOINT
+# ============================================
+@app.route("/search-suggest", methods=["POST"])
+def search_suggest():
+    """Get search suggestions based on keyword"""
+    try:
+        request_data = request.get_json()
+        if not request_data:
+            error_response = {"error": "Request body is required"}
+            return app.response_class(
+                response=json.dumps(add_branding(error_response), ensure_ascii=False),
+                status=400,
+                mimetype='application/json'
+            )
+        
+        keyword = request_data.get("keyword")
+        per_page = request_data.get("perPage", 10)
+        
+        if not keyword:
+            error_response = {"error": "keyword is required"}
+            return app.response_class(
+                response=json.dumps(add_branding(error_response), ensure_ascii=False),
+                status=400,
+                mimetype='application/json'
+            )
+        
+        payload = {
+            "keyword": keyword,
+            "perPage": per_page
+        }
+        
+        response = requests.post(SEARCH_SUGGEST_URL, json=payload, headers=get_category_headers(), timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("code") == 0 and data.get("data", {}).get("items"):
+            result_data = {
+                "keyword": data["data"].get("keyword", keyword),
+                "suggestions": data["data"]["items"]
+            }
+            return app.response_class(
+                response=json.dumps(add_branding(result_data), ensure_ascii=False),
+                status=200,
+                mimetype='application/json'
+            )
+        else:
+            error_response = {"error": "Failed to fetch suggestions"}
+            return app.response_class(
+                response=json.dumps(add_branding(error_response), ensure_ascii=False),
+                status=500,
+                mimetype='application/json'
+            )
+    except Exception as e:
+        error_response = {"error": str(e)}
+        return app.response_class(
+            response=json.dumps(add_branding(error_response), ensure_ascii=False),
+            status=500,
+            mimetype='application/json'
+        )
+
+# ============================================
+# DETAILS ENDPOINT - UPDATED WITH RECOMMENDATIONS
 # ============================================
 @app.route("/details", methods=["GET"])
 def get_details():
-    """Get complete details by subject ID and optional detailPath"""
-    subject_id = request.args.get("subjectId")
+    """Get complete details by detailPath or subjectId with recommendations"""
     detail_path = request.args.get("detailPath")
+    subject_id = request.args.get("subjectId")
     
-    if not subject_id:
-        error_response = {"error": "Missing subjectId parameter"}
+    if not detail_path and not subject_id:
+        error_response = {"error": "Missing detailPath or subjectId parameter"}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
             status=400,
             mimetype='application/json'
         )
     
-    # If detailPath is provided, use it directly (RELIABLE METHOD)
-    if detail_path:
-        print(f"🎬 Using provided detailPath: {detail_path}")
-        complete_details = fetch_complete_details(detail_path)
-        
-        if not complete_details:
-            error_response = {"error": "Complete details not found"}
+    # If we have subjectId but no detailPath, try to get detailPath first
+    if not detail_path and subject_id:
+        path_info = fetch_detail_path(subject_id)
+        if path_info:
+            detail_path = path_info.get("detailPath")
+        else:
+            error_response = {"error": "Could not find detailPath for the given subjectId"}
             return app.response_class(
                 response=json.dumps(add_branding(error_response), ensure_ascii=False),
                 status=404,
                 mimetype='application/json'
             )
-        
-        subject = complete_details.get("subject", {})
-        content_type = "series" if subject.get("subjectType") == 2 else "movie"
-        
-        # Clean up cast
-        stars = complete_details.get("stars", [])
-        unique_stars = []
-        seen_ids = set()
-        for star in stars:
-            staff_id = star.get("staffId")
-            if staff_id and staff_id not in seen_ids:
-                seen_ids.add(staff_id)
-                unique_stars.append(star)
-        
-        # Build response
-        data = OrderedDict()
-        data["type"] = content_type
-        data["title"] = subject.get("title")
-        data["description"] = subject.get("description")
-        data["releaseDate"] = subject.get("releaseDate")
-        data["genre"] = subject.get("genre")
-        data["country"] = subject.get("countryName")
-        data["imdbRating"] = {
-            "value": subject.get("imdbRatingValue"),
-            "count": subject.get("imdbRatingCount")
-        }
-        data["availableSubtitles"] = subject.get("subtitles")
-        data["hasResource"] = subject.get("hasResource")
-        data["cover"] = subject.get("cover")
-        data["subjectId"] = subject.get("subjectId")
-        data["detailPath"] = subject.get("detailPath")
-        data["cast"] = unique_stars
-        data["seasons"] = complete_details.get("resource", {}).get("seasons", [])
-        data["dubs"] = subject.get("dubs", [])
-        data["trailer"] = subject.get("trailer")
-        
-        return app.response_class(
-            response=json.dumps(add_branding(data), ensure_ascii=False),
-            status=200,
-            mimetype='application/json'
-        )
-    
-    # If no detailPath, fetch from detail-rec (works for both movies and series)
-    print(f"🔍 No detailPath provided, fetching from detail-rec for: {subject_id}")
-    detail_path_info = fetch_detail_path(subject_id)
-    
-    if not detail_path_info:
-        error_response = {"error": "Content not found"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=404,
-            mimetype='application/json'
-        )
-    
-    detail_path = detail_path_info.get("detailPath")
-    subject_type = detail_path_info.get("subjectType", 1)
     
     if not detail_path:
-        error_response = {"error": "Detail path not found"}
+        error_response = {"error": "Invalid detailPath"}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
             status=404,
             mimetype='application/json'
         )
     
+    # Fetch complete details
     complete_details = fetch_complete_details(detail_path)
     if not complete_details:
-        error_response = {"error": "Complete details not found"}
+        error_response = {"error": "Movie/Series not found"}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
             status=404,
@@ -707,7 +783,14 @@ def get_details():
         )
     
     subject = complete_details.get("subject", {})
-    content_type = "series" if subject_type == 2 else "movie"
+    actual_subject_id = subject.get("subjectId")
+    
+    # Fetch recommendations using subjectId
+    recommendations = []
+    if actual_subject_id:
+        recommendations = fetch_recommendations(actual_subject_id)
+    
+    content_type = "series" if subject.get("subjectType") == 2 else "movie"
     
     stars = complete_details.get("stars", [])
     unique_stars = []
@@ -738,6 +821,7 @@ def get_details():
     data["seasons"] = complete_details.get("resource", {}).get("seasons", [])
     data["dubs"] = subject.get("dubs", [])
     data["trailer"] = subject.get("trailer")
+    data["you_may_also_like"] = recommendations
     
     return app.response_class(
         response=json.dumps(add_branding(data), ensure_ascii=False),
@@ -750,7 +834,6 @@ def get_details():
 # ============================================
 @app.route("/movie/streams", methods=["GET"])
 def movie_streams():
-    """Get movie streams using only subjectId"""
     subject_id = request.args.get("subjectId")
     
     if not subject_id:
@@ -761,7 +844,6 @@ def movie_streams():
             mimetype='application/json'
         )
     
-    # First try to get detailPath from detail-rec
     detail_path_info = fetch_detail_path(subject_id)
     if not detail_path_info:
         error_response = {"error": "Movie not found"}
@@ -772,19 +854,17 @@ def movie_streams():
         )
     
     detail_path = detail_path_info.get("detailPath")
-    if not detail_path:
-        error_response = {"error": "Detail path not found"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=404,
-            mimetype='application/json'
-        )
-    
     streams, subtitles = fetch_streams(subject_id, detail_path, "0", "0")
     
     data = OrderedDict()
     data["type"] = "movie"
-    data["subjectId"] = subject_id
+    data["info"] = {
+        "title": detail_path_info.get("title", "Unknown"),
+        "subjectId": subject_id,
+        "detailPath": detail_path,
+        "description": detail_path_info.get("description", ""),
+        "cover": detail_path_info.get("cover", {})
+    }
     data["streams"] = streams
     data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
     
@@ -796,7 +876,6 @@ def movie_streams():
 
 @app.route("/series/streams", methods=["GET"])
 def series_streams():
-    """Get series episode streams using only subjectId"""
     subject_id = request.args.get("subjectId")
     se = request.args.get("se")
     ep = request.args.get("ep")
@@ -817,7 +896,6 @@ def series_streams():
             mimetype='application/json'
         )
     
-    # First try to get detailPath from detail-rec
     detail_path_info = fetch_detail_path(subject_id)
     if not detail_path_info:
         error_response = {"error": "Series not found"}
@@ -828,19 +906,17 @@ def series_streams():
         )
     
     detail_path = detail_path_info.get("detailPath")
-    if not detail_path:
-        error_response = {"error": "Detail path not found"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=404,
-            mimetype='application/json'
-        )
-    
     streams, subtitles = fetch_streams(subject_id, detail_path, se, ep)
     
     data = OrderedDict()
     data["type"] = "series"
-    data["subjectId"] = subject_id
+    data["info"] = {
+        "title": detail_path_info.get("title", "Unknown"),
+        "subjectId": subject_id,
+        "detailPath": detail_path,
+        "description": detail_path_info.get("description", ""),
+        "cover": detail_path_info.get("cover", {})
+    }
     data["season"] = se
     data["episode"] = ep
     data["streams"] = streams
@@ -853,39 +929,111 @@ def series_streams():
     )
 
 # ============================================
-# HOME & INFO ENDPOINTS
+# HOME PAGE WITH TREE STRUCTURE
 # ============================================
 @app.route("/", methods=["GET"])
 def home():
-    branding_info = OrderedDict()
-    branding_info["api_name"] = BRANDING["api_name"]
-    branding_info["api_version"] = BRANDING["api_version"]
-    branding_info["creator"] = BRANDING["creator"]
-    branding_info["tagline"] = BRANDING["tagline"]
-    branding_info["website"] = BRANDING["website"]
-    branding_info["whatsapp_channel"] = BRANDING["whatsapp_channel"]
-    branding_info["telegram"] = BRANDING["telegram"]
-    branding_info["support_email"] = BRANDING["support_email"]
-    branding_info["powered_by"] = BRANDING["powered_by"]
-    branding_info["copyright"] = BRANDING["copyright"]
-    branding_info["total_categories"] = len(CATEGORIES)
-    branding_info["endpoints"] = {
-        "categories": "GET /categories - List all categories",
-        "movies": "GET /movies/{category}?page=1&perPage=12 - Get movies by category",
-        "genre": "GET /genre/{genre}?page=1&perPage=28 - Filter by genre",
-        "search": "GET /search?q={query}&page=1 - Search movies and series",
-        "details": "GET /details?subjectId={id}&detailPath={path} - Get details (detailPath optional)",
-        "movie_streams": "GET /movie/streams?subjectId={id} - Get movie streams",
-        "series_streams": "GET /series/streams?subjectId={id}&se={season}&ep={episode} - Get series streams",
-        "stream": "GET /stream?url={url} - Video playback proxy",
-        "download": "GET /download?url={url} - Video download proxy",
-        "subtitle": "GET /subtitle/download?url={url} - Subtitle download"
-    }
+    base_url = get_base_url()
+    
+    tree = f"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║   🎬 NABEES MOVIE API v{BRANDING['api_version']} - Complete Streaming Solution                ║
+║                                                                              ║
+║   👤 Creator: {BRANDING['creator']}                                                       ║
+║   📱 WhatsApp: {BRANDING['whatsapp_channel']}                                            ║
+║   🌐 Website: {BRANDING['website']}                                                    ║
+║   💬 Telegram: {BRANDING['telegram']}                                                   ║
+║   📧 Support: {BRANDING['support_email']}                                                ║
+║                                                                              ║
+║   💡 {BRANDING['tagline']}                                                ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║   📂 CATEGORIES & FILTERS                                                    ║
+║   ═══════════════════════                                                    ║
+║   ├─ GET /categories                                                         ║
+║   ├─ GET /movies/‹category›?page=1&perPage=12                                ║
+║   │    └─ Categories: {', '.join(list(CATEGORIES.keys())[:5])}...           ║
+║   │                                                                          ║
+║   ├─ GET /genre/‹genre›?page=1&perPage=28                                   ║
+║   │    └─ Genres: horror, war, thriller, comedy, scifi, romance, family     ║
+║   │                                                                          ║
+║   ├─ GET /popular-searches                                                   ║
+║   └─ POST /search-suggest                                                    ║
+║        └─ Body: {{"keyword": "movie name", "perPage": 10}}                    ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║   🔍 SEARCH                                                                  ║
+║   ════════                                                                   ║
+║   └─ GET /search?q=‹query›&page=1                                           ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║   🎬 MOVIE/SERIES INFO                                                       ║
+║   ════════════════════                                                       ║
+║   ├─ GET /details?detailPath=‹path›                                         ║
+║   └─ GET /details?subjectId=‹id›                                            ║
+║        └─ Returns: Movie/Series details + You May Also Like recommendations ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║   📺 STREAMS & DOWNLOADS                                                     ║
+║   ═══════════════════════                                                    ║
+║   ├─ GET /movie/streams?subjectId=‹id›                                      ║
+║   ├─ GET /series/streams?subjectId=‹id›&se=‹season›&ep=‹episode›            ║
+║   │    └─ Returns: Streams + Subtitles + Movie/Series Info                  ║
+║   │                                                                          ║
+║   ├─ GET /stream?url=‹url› (For video playback)                             ║
+║   ├─ GET /download?url=‹url› (For direct download)                          ║
+║   └─ GET /subtitle/download?url=‹url›                                       ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║   ℹ️  INFO                                                                   ║
+║   ════════                                                                   ║
+║   ├─ GET /                                                                   ║
+║   └─ GET /health                                                             ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║   📝 QUICK EXAMPLES                                                          ║
+║   ═══════════════                                                            ║
+║                                                                              ║
+║   1. Get popular searches:                                                   ║
+║      curl {base_url}/popular-searches                                        ║
+║                                                                              ║
+║   2. Search for movies:                                                      ║
+║      curl "{base_url}/search?q=avengers&page=1"                              ║
+║                                                                              ║
+║   3. Get movie details with recommendations:                                 ║
+║      curl "{base_url}/details?detailPath=peaky-blinders-Ii0kbUrUZL4"         ║
+║                                                                              ║
+║   4. Get movie streams:                                                      ║
+║      curl "{base_url}/movie/streams?subjectId=4006958073083480920"           ║
+║                                                                              ║
+║   5. Get series episode streams:                                             ║
+║      curl "{base_url}/series/streams?subjectId=5904172458474619680&se=2&ep=4"║
+║                                                                              ║
+║   6. Get horror movies:                                                      ║
+║      curl "{base_url}/genre/horror?page=1&perPage=20"                        ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║   ⚡ All responses include branding & are wrapped in:                        ║
+║      {{"branding": {{...}}, "data": {{...}}, "status": 200, "success": true}} ║
+║                                                                              ║
+║   🔗 Base URL: {base_url}                                                    ║
+║   🚀 Status: ONLINE                                                          ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+    """
     
     return app.response_class(
-        response=json.dumps(branding_info, ensure_ascii=False, indent=2),
+        response=tree,
         status=200,
-        mimetype='application/json'
+        mimetype='text/plain'
     )
 
 @app.route("/health", methods=["GET"])
@@ -899,20 +1047,18 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print("=" * 70)
-    print("🎬 NABEES MOVIE API - COMPLETE EDITION v2.5")
+    print("🎬 NABEES MOVIE API - COMPLETE EDITION v3.0")
     print("=" * 70)
     print(f"👤 Creator: {BRANDING['creator']}")
     print(f"📱 WhatsApp: {BRANDING['whatsapp_channel']}")
     print(f"🌐 Website: {BRANDING['website']}")
     print(f"📡 Port: {port}")
-    print(f"🎯 Total Categories: {len(CATEGORIES)}")
     print("=" * 70)
-    print("🚀 ALL ENDPOINTS WORKING:")
-    print("   ✅ Categories, Movies, Genre, Search")
-    print("   ✅ Details (with optional detailPath)")
-    print("   ✅ Movie Streams")
-    print("   ✅ Series Streams")
-    print("   ✅ Stream/Download/Subtitle Proxies")
+    print("🚀 NEW FEATURES:")
+    print("   ✅ Updated /details endpoint with 'You May Also Like' recommendations")
+    print("   ✅ New /popular-searches endpoint")
+    print("   ✅ New /search-suggest endpoint (POST)")
+    print("   ✅ Beautiful terminal-style home page")
     print("=" * 70)
     print("🚀 Server starting on port", port)
     print("=" * 70)
