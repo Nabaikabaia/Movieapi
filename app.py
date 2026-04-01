@@ -1,124 +1,150 @@
 from flask import Flask, request, jsonify, Response, stream_with_context
+from flask_cors import CORS
 from collections import OrderedDict
 import requests
 import json
 import os
 import time
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)
 
 # ============================================
-# BRANDING CONFIGURATION
+# ALL CONFIGURATION FROM ENVIRONMENT VARIABLES
+# ============================================
+
+# API Configuration
+API_TOKEN = os.environ.get("API_TOKEN", "")
+COOKIE_TOKEN = os.environ.get("COOKIE_TOKEN", "")
+PORT = int(os.environ.get("PORT", 5000))
+DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
+
+# API URLs
+PLAY_URL = os.environ.get("PLAY_URL", "https://123movienow.cc/wefeed-h5api-bff/subject/play")
+CAPTION_URL = os.environ.get("CAPTION_URL", "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/caption")
+DETAIL_REC_URL = os.environ.get("DETAIL_REC_URL", "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/detail-rec")
+DETAIL_URL = os.environ.get("DETAIL_URL", "https://h5-api.aoneroom.com/wefeed-h5api-bff/detail")
+SEARCH_URL = os.environ.get("SEARCH_URL", "https://vid.davidxtech.de/api/search")
+POPULAR_SEARCH_URL = os.environ.get("POPULAR_SEARCH_URL", "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/everyone-search")
+SEARCH_SUGGEST_URL = os.environ.get("SEARCH_SUGGEST_URL", "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/search-suggest")
+
+# ============================================
+# BRANDING FROM ENV
 # ============================================
 BRANDING = {
     "status": 200,
     "success": True,
-    "creator": "Nabees Tech",
-    "developer": "Nabees",
-    "whatsapp_channel": "https://whatsapp.com/channel/0029VawtjOXJpe8X3j3NCZ3j",
-    "website": "https://nabees.online",
-    "telegram": "https://t.me/nabeestech",
-    "github": "https://github.com/Nabaikabaia",
-    "support_email": "nabees.dev@gmail.com",
-    "api_name": "Nabees Movie API",
-    "api_version": "3.0.0",
-    "powered_by": "Nabees Tech Labs",
-    "copyright": "© 2026-2099 Nabees Tech. All rights reserved.",
-    "tagline": "Streaming made simple, fast, and free! 🚀"
+    "creator": os.environ.get("BRANDING_CREATOR", "Nabees Tech"),
+    "developer": os.environ.get("BRANDING_DEVELOPER", "Nabees"),
+    "whatsapp_channel": os.environ.get("BRANDING_WHATSAPP", "https://whatsapp.com/channel/0029VawtjOXJpe8X3j3NCZ3j"),
+    "website": os.environ.get("BRANDING_WEBSITE", "https://nabees.online"),
+    "telegram": os.environ.get("BRANDING_TELEGRAM", "https://t.me/nabeestech"),
+    "github": os.environ.get("BRANDING_GITHUB", "https://github.com/Nabaikabaia"),
+    "support_email": os.environ.get("BRANDING_EMAIL", "nabees.dev@gmail.com"),
+    "api_name": os.environ.get("BRANDING_API_NAME", "Nabees Movie API"),
+    "api_version": os.environ.get("BRANDING_VERSION", "3.2.0"),
+    "powered_by": os.environ.get("BRANDING_POWERED_BY", "Nabees Tech Labs"),
+    "copyright": os.environ.get("BRANDING_COPYRIGHT", "© 2026-2099 Nabees Tech. All rights reserved."),
+    "tagline": os.environ.get("BRANDING_TAGLINE", "Streaming made simple, fast, and free! 🚀")
 }
 
 # ============================================
-# CATEGORIES CONFIGURATION
+# CATEGORIES FROM ENV
 # ============================================
 CATEGORIES = {
-    "anime": "62133389738001440",
-    "nollywood": "8216283712045280",
-    "black-drama": "8505361996374835640", 
-    "k-drama": "4380734070238626200",
-    "sa-drama": "4307848214843217008",
-    "animation": "7132534597631837112",
-    "bollywood": "414907768299210008",
-    "c-drama": "173752404280836544",
-    "thai-drama": "1164329479448281992",
-    "returning-tv": "8109661952110199232",
-    "top-list": "1232643093049001320",
-    "new-tv": "2529702013798074864",
-    "popular": "997144265920760504",
-    "showmax": "2076266324048625696",
-    "turkish": "9193088611682599936",
-    "indian": "3859721901924910512",
-    "hot": "997144265920760504"
+    "anime": os.environ.get("CAT_ANIME", "62133389738001440"),
+    "nollywood": os.environ.get("CAT_NOLLYWOOD", "8216283712045280"),
+    "black-drama": os.environ.get("CAT_BLACK_DRAMA", "8505361996374835640"),
+    "k-drama": os.environ.get("CAT_K_DRAMA", "4380734070238626200"),
+    "sa-drama": os.environ.get("CAT_SA_DRAMA", "4307848214843217008"),
+    "animation": os.environ.get("CAT_ANIMATION", "7132534597631837112"),
+    "bollywood": os.environ.get("CAT_BOLLYWOOD", "414907768299210008"),
+    "c-drama": os.environ.get("CAT_C_DRAMA", "173752404280836544"),
+    "thai-drama": os.environ.get("CAT_THAI_DRAMA", "1164329479448281992"),
+    "returning-tv": os.environ.get("CAT_RETURNING_TV", "8109661952110199232"),
+    "top-list": os.environ.get("CAT_TOP_LIST", "1232643093049001320"),
+    "new-tv": os.environ.get("CAT_NEW_TV", "2529702013798074864"),
+    "popular": os.environ.get("CAT_POPULAR", "997144265920760504"),
+    "showmax": os.environ.get("CAT_SHOWMAX", "2076266324048625696"),
+    "turkish": os.environ.get("CAT_TURKISH", "9193088611682599936"),
+    "indian": os.environ.get("CAT_INDIAN", "3859721901924910512"),
+    "hot": os.environ.get("CAT_HOT", "997144265920760504")
 }
 
+# Category Metadata
 CATEGORY_INFO = {
-    "anime": {"name": "Anime", "region": "Japan", "type": "Animation", "flag": "🇯🇵"},
-    "nollywood": {"name": "Nollywood", "region": "Nigeria", "type": "Movies", "flag": "🇳🇬"},
-    "black-drama": {"name": "Black Drama", "region": "USA/UK", "type": "TV Series", "flag": "🎭"},
-    "k-drama": {"name": "K-Drama", "region": "South Korea", "type": "TV Series", "flag": "🇰🇷"},
-    "sa-drama": {"name": "South African Drama", "region": "South Africa", "type": "TV Series", "flag": "🇿🇦"},
-    "animation": {"name": "Animation", "region": "Various", "type": "Animated", "flag": "🎨"},
-    "bollywood": {"name": "Bollywood", "region": "India", "type": "Movies", "flag": "🇮🇳"},
-    "c-drama": {"name": "C-Drama", "region": "China", "type": "TV Series", "flag": "🇨🇳"},
-    "thai-drama": {"name": "Thai Drama", "region": "Thailand", "type": "TV Series", "flag": "🇹🇭"},
-    "returning-tv": {"name": "Returning TV Shows", "region": "Various", "type": "TV Series", "flag": "📺"},
-    "top-list": {"name": "Top Trending", "region": "Global", "type": "Mixed", "flag": "🔥"},
-    "new-tv": {"name": "New TV Shows", "region": "Various", "type": "TV Series", "flag": "🆕"},
-    "popular": {"name": "Popular Movies 2025", "region": "Various", "type": "Movies", "flag": "⭐"},
-    "showmax": {"name": "Showmax Originals", "region": "Africa", "type": "Originals", "flag": "📱"},
-    "turkish": {"name": "Turkish Drama", "region": "Turkey", "type": "TV Series", "flag": "🇹🇷"},
-    "indian": {"name": "South Indian Movies", "region": "India", "type": "Movies", "flag": "🇮🇳"},
-    "hot": {"name": "Hot Movies 2025", "region": "Global", "type": "Movies", "flag": "🔥"}
+    "anime": {"name": os.environ.get("INFO_ANIME_NAME", "Anime"), "region": os.environ.get("INFO_ANIME_REGION", "Japan"), "type": os.environ.get("INFO_ANIME_TYPE", "Animation"), "flag": os.environ.get("INFO_ANIME_FLAG", "🇯🇵")},
+    "nollywood": {"name": os.environ.get("INFO_NOLLYWOOD_NAME", "Nollywood"), "region": os.environ.get("INFO_NOLLYWOOD_REGION", "Nigeria"), "type": os.environ.get("INFO_NOLLYWOOD_TYPE", "Movies"), "flag": os.environ.get("INFO_NOLLYWOOD_FLAG", "🇳🇬")},
+    "black-drama": {"name": os.environ.get("INFO_BLACK_DRAMA_NAME", "Black Drama"), "region": os.environ.get("INFO_BLACK_DRAMA_REGION", "USA/UK"), "type": os.environ.get("INFO_BLACK_DRAMA_TYPE", "TV Series"), "flag": os.environ.get("INFO_BLACK_DRAMA_FLAG", "🎭")},
+    "k-drama": {"name": os.environ.get("INFO_K_DRAMA_NAME", "K-Drama"), "region": os.environ.get("INFO_K_DRAMA_REGION", "South Korea"), "type": os.environ.get("INFO_K_DRAMA_TYPE", "TV Series"), "flag": os.environ.get("INFO_K_DRAMA_FLAG", "🇰🇷")},
+    "sa-drama": {"name": os.environ.get("INFO_SA_DRAMA_NAME", "South African Drama"), "region": os.environ.get("INFO_SA_DRAMA_REGION", "South Africa"), "type": os.environ.get("INFO_SA_DRAMA_TYPE", "TV Series"), "flag": os.environ.get("INFO_SA_DRAMA_FLAG", "🇿🇦")},
+    "animation": {"name": os.environ.get("INFO_ANIMATION_NAME", "Animation"), "region": os.environ.get("INFO_ANIMATION_REGION", "Various"), "type": os.environ.get("INFO_ANIMATION_TYPE", "Animated"), "flag": os.environ.get("INFO_ANIMATION_FLAG", "🎨")},
+    "bollywood": {"name": os.environ.get("INFO_BOLLYWOOD_NAME", "Bollywood"), "region": os.environ.get("INFO_BOLLYWOOD_REGION", "India"), "type": os.environ.get("INFO_BOLLYWOOD_TYPE", "Movies"), "flag": os.environ.get("INFO_BOLLYWOOD_FLAG", "🇮🇳")},
+    "c-drama": {"name": os.environ.get("INFO_C_DRAMA_NAME", "C-Drama"), "region": os.environ.get("INFO_C_DRAMA_REGION", "China"), "type": os.environ.get("INFO_C_DRAMA_TYPE", "TV Series"), "flag": os.environ.get("INFO_C_DRAMA_FLAG", "🇨🇳")},
+    "thai-drama": {"name": os.environ.get("INFO_THAI_DRAMA_NAME", "Thai Drama"), "region": os.environ.get("INFO_THAI_DRAMA_REGION", "Thailand"), "type": os.environ.get("INFO_THAI_DRAMA_TYPE", "TV Series"), "flag": os.environ.get("INFO_THAI_DRAMA_FLAG", "🇹🇭")},
+    "returning-tv": {"name": os.environ.get("INFO_RETURNING_TV_NAME", "Returning TV Shows"), "region": os.environ.get("INFO_RETURNING_TV_REGION", "Various"), "type": os.environ.get("INFO_RETURNING_TV_TYPE", "TV Series"), "flag": os.environ.get("INFO_RETURNING_TV_FLAG", "📺")},
+    "top-list": {"name": os.environ.get("INFO_TOP_LIST_NAME", "Top Trending"), "region": os.environ.get("INFO_TOP_LIST_REGION", "Global"), "type": os.environ.get("INFO_TOP_LIST_TYPE", "Mixed"), "flag": os.environ.get("INFO_TOP_LIST_FLAG", "🔥")},
+    "new-tv": {"name": os.environ.get("INFO_NEW_TV_NAME", "New TV Shows"), "region": os.environ.get("INFO_NEW_TV_REGION", "Various"), "type": os.environ.get("INFO_NEW_TV_TYPE", "TV Series"), "flag": os.environ.get("INFO_NEW_TV_FLAG", "🆕")},
+    "popular": {"name": os.environ.get("INFO_POPULAR_NAME", "Popular Movies 2025"), "region": os.environ.get("INFO_POPULAR_REGION", "Various"), "type": os.environ.get("INFO_POPULAR_TYPE", "Movies"), "flag": os.environ.get("INFO_POPULAR_FLAG", "⭐")},
+    "showmax": {"name": os.environ.get("INFO_SHOWMAX_NAME", "Showmax Originals"), "region": os.environ.get("INFO_SHOWMAX_REGION", "Africa"), "type": os.environ.get("INFO_SHOWMAX_TYPE", "Originals"), "flag": os.environ.get("INFO_SHOWMAX_FLAG", "📱")},
+    "turkish": {"name": os.environ.get("INFO_TURKISH_NAME", "Turkish Drama"), "region": os.environ.get("INFO_TURKISH_REGION", "Turkey"), "type": os.environ.get("INFO_TURKISH_TYPE", "TV Series"), "flag": os.environ.get("INFO_TURKISH_FLAG", "🇹🇷")},
+    "indian": {"name": os.environ.get("INFO_INDIAN_NAME", "South Indian Movies"), "region": os.environ.get("INFO_INDIAN_REGION", "India"), "type": os.environ.get("INFO_INDIAN_TYPE", "Movies"), "flag": os.environ.get("INFO_INDIAN_FLAG", "🇮🇳")},
+    "hot": {"name": os.environ.get("INFO_HOT_NAME", "Hot Movies 2025"), "region": os.environ.get("INFO_HOT_REGION", "Global"), "type": os.environ.get("INFO_HOT_TYPE", "Movies"), "flag": os.environ.get("INFO_HOT_FLAG", "🔥")}
 }
 
 # ============================================
-# API URLs
+# COOKIES FROM ENV
 # ============================================
-PLAY_URL = "https://123movienow.cc/wefeed-h5api-bff/subject/play"
-CAPTION_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/caption"
-DETAIL_REC_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/detail-rec"
-DETAIL_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/detail"
-SEARCH_URL = "https://vid.davidxtech.de/api/search"
-POPULAR_SEARCH_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/everyone-search"
-SEARCH_SUGGEST_URL = "https://h5-api.aoneroom.com/wefeed-h5api-bff/subject/search-suggest"
+COOKIES = {
+    "_ga": os.environ.get("COOKIE_GA", "GA1.1.463955875.1771311637"),
+    "_ga_5W8GT0FPB7": os.environ.get("COOKIE_GA2", "GS2.1.s1774715648$o7$g1$t1774715738$j60$l0$h0"),
+    "uuid": os.environ.get("COOKIE_UUID", "74b149c1-921f-4337-a1a6-8e5122427c7a"),
+    "token": COOKIE_TOKEN
+}
 
-# Headers for category API requests
+# ============================================
+# HEADERS FOR STREAMING
+# ============================================
+STREAM_HEADERS = {
+    "User-Agent": os.environ.get("USER_AGENT", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"),
+    "Accept": "*/*",
+    "Accept-Language": os.environ.get("ACCEPT_LANGUAGE", "en-GB,en-US;q=0.9,en;q=0.8"),
+    "Connection": "keep-alive",
+    "Referer": os.environ.get("REFERER", "https://123movienow.cc/"),
+    "Origin": os.environ.get("ORIGIN", "https://123movienow.cc")
+}
+
+# ============================================
+# HELPER FUNCTIONS
+# ============================================
 def get_category_headers():
     return {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "X-Client-Info": '{"timezone":"Africa/Lagos"}',
-        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjQ2ODM2NjU2ODU2NTc1ODQwMCwiYXRwIjozLCJleHQiOiIxNzcxNDE0NjY0IiwiZXhwIjoxNzc5MTkwNjY0LCJpYXQiOjE3NzE0MTQzNjR9.o6K7hQd3ii0dW-FvuoJ4JMwjTJfOvvlE6G-MTjUV73Y",
-        "X-Request-Lang": "en"
+        "X-Client-Info": os.environ.get("X_CLIENT_INFO", '{"timezone":"Africa/Lagos"}'),
+        "Authorization": API_TOKEN,
+        "X-Request-Lang": os.environ.get("X_REQUEST_LANG", "en")
     }
 
-# Headers for search API (vid.davidxtech.de)
 def get_search_headers():
     return {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": STREAM_HEADERS["User-Agent"],
         "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://vid.davidxtech.de/",
-        "Origin": "https://vid.davidxtech.de",
+        "Accept-Language": STREAM_HEADERS["Accept-Language"],
+        "Referer": os.environ.get("SEARCH_REFERER", "https://vid.davidxtech.de/"),
+        "Origin": os.environ.get("SEARCH_ORIGIN", "https://vid.davidxtech.de"),
         "Connection": "keep-alive",
         "Cache-Control": "no-cache"
     }
-
-# Headers for streaming
-STREAM_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36",
-    "Accept": "*/*",
-    "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-    "Connection": "keep-alive",
-    "Referer": "https://123movienow.cc/",
-    "Origin": "https://123movienow.cc"
-}
-
-COOKIES = {
-    "_ga": "GA1.1.463955875.1771311637",
-    "_ga_5W8GT0FPB7": "GS2.1.s1774715648$o7$g1$t1774715738$j60$l0$h0",
-    "uuid": "74b149c1-921f-4337-a1a6-8e5122427c7a",
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
 
 def add_branding(data):
     """Add branding wrapper to any response"""
@@ -153,7 +179,7 @@ def get_headers(detail_path, subject_id, se, ep):
         "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
         "sec-ch-ua-mobile": "?1",
         "x-client-info": '{"timezone":"Africa/Lagos"}',
-        "user-agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36",
+        "user-agent": STREAM_HEADERS["User-Agent"],
         "accept": "application/json",
         "origin": "https://123movienow.cc",
         "referer": f"https://123movienow.cc/spa/videoPlayPage/movies/{detail_path}?id={subject_id}&type=/movie/detail&detailSe={se}&detailEp={ep}&lang=en"
@@ -220,7 +246,7 @@ def fetch_streams(subject_id, detail_path, se, ep):
                         if subtitle_entry["download_url"]:
                             all_subtitles.append(subtitle_entry)
         except Exception as e:
-            print(f"Error fetching subtitles: {e}")
+            logger.error(f"Error fetching subtitles: {e}")
     
     # Remove duplicates based on language code
     unique_subtitles = []
@@ -234,7 +260,7 @@ def fetch_streams(subject_id, detail_path, se, ep):
     return streams, unique_subtitles
 
 def fetch_detail_path(subject_id):
-    """Fetch detailPath from detail-rec endpoint using only subjectId"""
+    """Fetch detailPath from detail-rec endpoint using only subjectId (fallback)"""
     params = {
         "subjectId": subject_id,
         "page": 1,
@@ -271,7 +297,7 @@ def fetch_detail_path(subject_id):
         
         return None
     except Exception as e:
-        print(f"Error fetching detailPath for {subject_id}: {e}")
+        logger.error(f"Error fetching detailPath for {subject_id}: {e}")
         return None
 
 def fetch_complete_details(detail_path):
@@ -293,7 +319,7 @@ def fetch_complete_details(detail_path):
             }
         return None
     except Exception as e:
-        print(f"Error fetching complete details for {detail_path}: {e}")
+        logger.error(f"Error fetching complete details for {detail_path}: {e}")
         return None
 
 def fetch_recommendations(subject_id):
@@ -311,7 +337,6 @@ def fetch_recommendations(subject_id):
         
         if data.get("code") == 0 and data.get("data", {}).get("items"):
             items = data["data"]["items"]
-            # Filter out the current item if needed
             recommendations = []
             for item in items:
                 if str(item.get("subjectId")) != str(subject_id):
@@ -324,10 +349,10 @@ def fetch_recommendations(subject_id):
                         "year": item.get("releaseDate", "").split("-")[0] if item.get("releaseDate") else "",
                         "imdbRating": item.get("imdbRatingValue")
                     })
-            return recommendations[:20]  # Limit to 20 recommendations
+            return recommendations[:20]
         return []
     except Exception as e:
-        print(f"Error fetching recommendations: {e}")
+        logger.error(f"Error fetching recommendations: {e}")
         return []
 
 # ============================================
@@ -357,6 +382,7 @@ def proxy_stream():
             "Cache-Control": "public, max-age=3600"
         })
     except Exception as e:
+        logger.error(f"Stream proxy error: {e}")
         return jsonify({"error": f"Failed to fetch stream: {str(e)}"}), 500
 
 @app.route("/download", methods=["GET"])
@@ -382,6 +408,7 @@ def proxy_download():
             "Cache-Control": "public, max-age=3600"
         })
     except Exception as e:
+        logger.error(f"Download error: {e}")
         return jsonify({"error": f"Failed to download: {str(e)}"}), 500
 
 @app.route("/subtitle/download", methods=["GET"])
@@ -403,6 +430,7 @@ def download_subtitle():
             "Cache-Control": "public, max-age=3600"
         })
     except Exception as e:
+        logger.error(f"Subtitle download error: {e}")
         return jsonify({"error": f"Failed to fetch subtitle: {str(e)}"}), 500
 
 # ============================================
@@ -484,6 +512,7 @@ def get_movies_by_category(category):
             mimetype='application/json'
         )
     except Exception as e:
+        logger.error(f"Movies by category error: {e}")
         error_response = {"error": str(e)}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
@@ -553,6 +582,7 @@ def get_by_genre(genre_name):
             mimetype='application/json'
         )
     except Exception as e:
+        logger.error(f"Genre filter error: {e}")
         error_response = {"error": str(e)}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
@@ -630,6 +660,7 @@ def search_movies():
         )
         
     except Exception as e:
+        logger.error(f"Search error: {e}")
         error_response = {"error": str(e)}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
@@ -642,7 +673,6 @@ def search_movies():
 # ============================================
 @app.route("/popular-searches", methods=["GET"])
 def popular_searches():
-    """Get popular searches from everyone-search endpoint"""
     try:
         response = requests.get(POPULAR_SEARCH_URL, headers=get_category_headers(), timeout=10)
         response.raise_for_status()
@@ -650,9 +680,7 @@ def popular_searches():
         
         if data.get("code") == 0 and data.get("data", {}).get("everyoneSearch"):
             popular = data["data"]["everyoneSearch"]
-            result_data = {
-                "popular_searches": popular
-            }
+            result_data = {"popular_searches": popular}
             return app.response_class(
                 response=json.dumps(add_branding(result_data), ensure_ascii=False),
                 status=200,
@@ -666,6 +694,7 @@ def popular_searches():
                 mimetype='application/json'
             )
     except Exception as e:
+        logger.error(f"Popular searches error: {e}")
         error_response = {"error": str(e)}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
@@ -678,7 +707,6 @@ def popular_searches():
 # ============================================
 @app.route("/search-suggest", methods=["POST"])
 def search_suggest():
-    """Get search suggestions based on keyword"""
     try:
         request_data = request.get_json()
         if not request_data:
@@ -700,11 +728,7 @@ def search_suggest():
                 mimetype='application/json'
             )
         
-        payload = {
-            "keyword": keyword,
-            "perPage": per_page
-        }
-        
+        payload = {"keyword": keyword, "perPage": per_page}
         response = requests.post(SEARCH_SUGGEST_URL, json=payload, headers=get_category_headers(), timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -727,6 +751,7 @@ def search_suggest():
                 mimetype='application/json'
             )
     except Exception as e:
+        logger.error(f"Search suggest error: {e}")
         error_response = {"error": str(e)}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
@@ -735,11 +760,10 @@ def search_suggest():
         )
 
 # ============================================
-# DETAILS ENDPOINT - UPDATED WITH RECOMMENDATIONS
+# DETAILS ENDPOINT
 # ============================================
 @app.route("/details", methods=["GET"])
 def get_details():
-    """Get complete details by detailPath or subjectId with recommendations"""
     detail_path = request.args.get("detailPath")
     subject_id = request.args.get("subjectId")
     
@@ -751,7 +775,6 @@ def get_details():
             mimetype='application/json'
         )
     
-    # If we have subjectId but no detailPath, try to get detailPath first
     if not detail_path and subject_id:
         path_info = fetch_detail_path(subject_id)
         if path_info:
@@ -772,7 +795,6 @@ def get_details():
             mimetype='application/json'
         )
     
-    # Fetch complete details
     complete_details = fetch_complete_details(detail_path)
     if not complete_details:
         error_response = {"error": "Movie/Series not found"}
@@ -785,7 +807,6 @@ def get_details():
     subject = complete_details.get("subject", {})
     actual_subject_id = subject.get("subjectId")
     
-    # Fetch recommendations using subjectId
     recommendations = []
     if actual_subject_id:
         recommendations = fetch_recommendations(actual_subject_id)
@@ -835,6 +856,7 @@ def get_details():
 @app.route("/movie/streams", methods=["GET"])
 def movie_streams():
     subject_id = request.args.get("subjectId")
+    detail_path = request.args.get("detailPath")
     
     if not subject_id:
         error_response = {"error": "Missing subjectId parameter"}
@@ -844,26 +866,21 @@ def movie_streams():
             mimetype='application/json'
         )
     
-    detail_path_info = fetch_detail_path(subject_id)
-    if not detail_path_info:
-        error_response = {"error": "Movie not found"}
+    if not detail_path:
+        error_response = {"error": "Missing detailPath parameter. Use: /movie/streams?subjectId=xxx&detailPath=yyy"}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=404,
+            status=400,
             mimetype='application/json'
         )
     
-    detail_path = detail_path_info.get("detailPath")
     streams, subtitles = fetch_streams(subject_id, detail_path, "0", "0")
     
     data = OrderedDict()
     data["type"] = "movie"
     data["info"] = {
-        "title": detail_path_info.get("title", "Unknown"),
         "subjectId": subject_id,
-        "detailPath": detail_path,
-        "description": detail_path_info.get("description", ""),
-        "cover": detail_path_info.get("cover", {})
+        "detailPath": detail_path
     }
     data["streams"] = streams
     data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
@@ -877,11 +894,20 @@ def movie_streams():
 @app.route("/series/streams", methods=["GET"])
 def series_streams():
     subject_id = request.args.get("subjectId")
+    detail_path = request.args.get("detailPath")
     se = request.args.get("se")
     ep = request.args.get("ep")
     
     if not subject_id:
         error_response = {"error": "Missing subjectId parameter"}
+        return app.response_class(
+            response=json.dumps(add_branding(error_response), ensure_ascii=False),
+            status=400,
+            mimetype='application/json'
+        )
+    
+    if not detail_path:
+        error_response = {"error": "Missing detailPath parameter. Use: /series/streams?subjectId=xxx&detailPath=yyy&se=1&ep=1"}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
             status=400,
@@ -896,26 +922,13 @@ def series_streams():
             mimetype='application/json'
         )
     
-    detail_path_info = fetch_detail_path(subject_id)
-    if not detail_path_info:
-        error_response = {"error": "Series not found"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=404,
-            mimetype='application/json'
-        )
-    
-    detail_path = detail_path_info.get("detailPath")
     streams, subtitles = fetch_streams(subject_id, detail_path, se, ep)
     
     data = OrderedDict()
     data["type"] = "series"
     data["info"] = {
-        "title": detail_path_info.get("title", "Unknown"),
         "subjectId": subject_id,
-        "detailPath": detail_path,
-        "description": detail_path_info.get("description", ""),
-        "cover": detail_path_info.get("cover", {})
+        "detailPath": detail_path
     }
     data["season"] = se
     data["episode"] = ep
@@ -929,109 +942,136 @@ def series_streams():
     )
 
 # ============================================
-# HOME PAGE WITH TREE STRUCTURE
+# BEAUTIFUL FRAMED HOME PAGE
 # ============================================
 @app.route("/", methods=["GET"])
 def home():
     base_url = get_base_url()
     
-    tree = f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                                                                              ║
-║   🎬 NABEES MOVIE API v{BRANDING['api_version']} - Complete Streaming Solution                ║
-║                                                                              ║
-║   👤 Creator: {BRANDING['creator']}                                                       ║
-║   📱 WhatsApp: {BRANDING['whatsapp_channel']}                                            ║
-║   🌐 Website: {BRANDING['website']}                                                    ║
-║   💬 Telegram: {BRANDING['telegram']}                                                   ║
-║   📧 Support: {BRANDING['support_email']}                                                ║
-║                                                                              ║
-║   💡 {BRANDING['tagline']}                                                ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   📂 CATEGORIES & FILTERS                                                    ║
-║   ═══════════════════════                                                    ║
-║   ├─ GET /categories                                                         ║
-║   ├─ GET /movies/‹category›?page=1&perPage=12                                ║
-║   │    └─ Categories: {', '.join(list(CATEGORIES.keys())[:5])}...           ║
-║   │                                                                          ║
-║   ├─ GET /genre/‹genre›?page=1&perPage=28                                   ║
-║   │    └─ Genres: horror, war, thriller, comedy, scifi, romance, family     ║
-║   │                                                                          ║
-║   ├─ GET /popular-searches                                                   ║
-║   └─ POST /search-suggest                                                    ║
-║        └─ Body: {{"keyword": "movie name", "perPage": 10}}                    ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   🔍 SEARCH                                                                  ║
-║   ════════                                                                   ║
-║   └─ GET /search?q=‹query›&page=1                                           ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   🎬 MOVIE/SERIES INFO                                                       ║
-║   ════════════════════                                                       ║
-║   ├─ GET /details?detailPath=‹path›                                         ║
-║   └─ GET /details?subjectId=‹id›                                            ║
-║        └─ Returns: Movie/Series details + You May Also Like recommendations ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   📺 STREAMS & DOWNLOADS                                                     ║
-║   ═══════════════════════                                                    ║
-║   ├─ GET /movie/streams?subjectId=‹id›                                      ║
-║   ├─ GET /series/streams?subjectId=‹id›&se=‹season›&ep=‹episode›            ║
-║   │    └─ Returns: Streams + Subtitles + Movie/Series Info                  ║
-║   │                                                                          ║
-║   ├─ GET /stream?url=‹url› (For video playback)                             ║
-║   ├─ GET /download?url=‹url› (For direct download)                          ║
-║   └─ GET /subtitle/download?url=‹url›                                       ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   ℹ️  INFO                                                                   ║
-║   ════════                                                                   ║
-║   ├─ GET /                                                                   ║
-║   └─ GET /health                                                             ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   📝 QUICK EXAMPLES                                                          ║
-║   ═══════════════                                                            ║
-║                                                                              ║
-║   1. Get popular searches:                                                   ║
-║      curl {base_url}/popular-searches                                        ║
-║                                                                              ║
-║   2. Search for movies:                                                      ║
-║      curl "{base_url}/search?q=avengers&page=1"                              ║
-║                                                                              ║
-║   3. Get movie details with recommendations:                                 ║
-║      curl "{base_url}/details?detailPath=peaky-blinders-Ii0kbUrUZL4"         ║
-║                                                                              ║
-║   4. Get movie streams:                                                      ║
-║      curl "{base_url}/movie/streams?subjectId=4006958073083480920"           ║
-║                                                                              ║
-║   5. Get series episode streams:                                             ║
-║      curl "{base_url}/series/streams?subjectId=5904172458474619680&se=2&ep=4"║
-║                                                                              ║
-║   6. Get horror movies:                                                      ║
-║      curl "{base_url}/genre/horror?page=1&perPage=20"                        ║
-║                                                                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║   ⚡ All responses include branding & are wrapped in:                        ║
-║      {{"branding": {{...}}, "data": {{...}}, "status": 200, "success": true}} ║
-║                                                                              ║
-║   🔗 Base URL: {base_url}                                                    ║
-║   🚀 Status: ONLINE                                                          ║
-║                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-    """
+    categories_list = list(CATEGORIES.keys())
+    categories_display = ' '.join([f"「{cat}」" for cat in categories_list[:10]]) + (' ...' if len(categories_list) > 10 else '')
+    genres_display = ' '.join([f"「{g}」" for g in ['horror', 'war', 'thriller', 'comedy', 'scifi', 'romance', 'family']])
+    
+    content = f"""
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+┃                                                                    ┃
+┃                         🎬 NABEES MOVIE API                        ┃
+┃                            v{BRANDING['api_version']}                            ┃
+┃                                                                    ┃
+┃                  {BRANDING['tagline']}                  ┃
+┃                                                                    ┃
+├┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┤
+┃                                                                    ┃
+┃  👤 Creator      : {BRANDING['creator']:<44}┃
+┃  📱 WhatsApp     : {BRANDING['whatsapp_channel']:<44}┃
+┃  🌐 Website      : {BRANDING['website']:<44}┃
+┃  💬 Telegram     : {BRANDING['telegram']:<44}┃
+┃  📧 Support      : {BRANDING['support_email']:<44}┃
+┃                                                                    ┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+┃  📂 CATEGORIES                                                     ┃
+┃  ─────────────────────────────────────────────────────────────────┃
+┃                                                                    ┃
+┃  GET  /categories                                                  ┃
+┃  GET  /movies/«category»?page=1&perPage=12                         ┃
+┃                                                                    ┃
+┃  {categories_display}                  ┃
+┃                                                                    ┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+┃  🎭 GENRE FILTERS                                                  ┃
+┃  ─────────────────────────────────────────────────────────────────┃
+┃                                                                    ┃
+┃  GET  /genre/«genre»?page=1&perPage=28                             ┃
+┃                                                                    ┃
+┃  {genres_display}                       ┃
+┃                                                                    ┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+┃  🔍 SEARCH                                                         ┃
+┃  ─────────────────────────────────────────────────────────────────┃
+┃                                                                    ┃
+┃  GET  /search?q=«query»&page=1                                     ┃
+┃  GET  /popular-searches                                            ┃
+┃  POST /search-suggest                                              ┃
+┃                                                                    ┃
+┃  ┌──────────────────────────────────────────────────────────────┐ ┃
+┃  │  Body: {{"keyword": "movie name", "perPage": 10}}           │ ┃
+┃  └──────────────────────────────────────────────────────────────┘ ┃
+┃                                                                    ┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+┃  🎬 MOVIE / SERIES INFO                                            ┃
+┃  ─────────────────────────────────────────────────────────────────┃
+┃                                                                    ┃
+┃  GET  /details?detailPath=«path»                                   ┃
+┃  GET  /details?subjectId=«id»                                      ┃
+┃                                                                    ┃
+┃  ✨ Returns: Full details + You May Also Like recommendations      ┃
+┃                                                                    ┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+┃  📺 STREAMS & DOWNLOADS                                            ┃
+┃  ─────────────────────────────────────────────────────────────────┃
+┃                                                                    ┃
+┃  GET  /movie/streams?subjectId=«id»&detailPath=«path»              ┃
+┃  GET  /series/streams?subjectId=«id»&detailPath=«path»&se=1&ep=1  ┃
+┃  GET  /stream?url=«url»                                            ┃
+┃  GET  /download?url=«url»                                          ┃
+┃  GET  /subtitle/download?url=«url»                                 ┃
+┃                                                                    ┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+┃  📝 QUICK EXAMPLES                                                 ┃
+┃  ─────────────────────────────────────────────────────────────────┃
+┃                                                                    ┃
+┃  ┌──────────────────────────────────────────────────────────────┐ ┃
+┃  │  # Get popular searches                                      │ ┃
+┃  │  curl {base_url}/popular-searches                           │ ┃
+┃  └──────────────────────────────────────────────────────────────┘ ┃
+┃                                                                    ┃
+┃  ┌──────────────────────────────────────────────────────────────┐ ┃
+┃  │  # Search for movies                                         │ ┃
+┃  │  curl "{base_url}/search?q=avengers"                        │ ┃
+┃  └──────────────────────────────────────────────────────────────┘ ┃
+┃                                                                    ┃
+┃  ┌──────────────────────────────────────────────────────────────┐ ┃
+┃  │  # Get movie streams                                         │ ┃
+┃  │  curl "{base_url}/movie/streams?subjectId=3562334115405909808&detailPath=brave-4YlSeNJw9f4" │ ┃
+┃  └──────────────────────────────────────────────────────────────┘ ┃
+┃                                                                    ┃
+┃  ┌──────────────────────────────────────────────────────────────┐ ┃
+┃  │  # Get series episode                                        │ ┃
+┃  │  curl "{base_url}/series/streams?subjectId=5904172458474619680&detailPath=beauty-in-black-E6NEe5Ha927&se=2&ep=4" │ ┃
+┃  └──────────────────────────────────────────────────────────────┘ ┃
+┃                                                                    ┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+
+╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
+┃  ℹ️ INFO                                                           ┃
+┃  ─────────────────────────────────────────────────────────────────┃
+┃                                                                    ┃
+┃  GET  /                                                            ┃
+┃  GET  /health                                                      ┃
+┃                                                                    ┃
+┃  ⚡ Response Format: {{"branding": {{...}}, "data": {{...}}, "status": 200, "success": true}} ┃
+┃                                                                    ┃
+┃  🔗 Base URL : {base_url:<53}┃
+┃  🚀 Status    : ONLINE                                             ┃
+┃  ©️ Copyright : {BRANDING['copyright']:<53}┃
+┃                                                                    ┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
+"""
     
     return app.response_class(
-        response=tree,
+        response=content,
         status=200,
         mimetype='text/plain'
     )
@@ -1045,22 +1085,16 @@ def health():
     )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    print("=" * 70)
-    print("🎬 NABEES MOVIE API - COMPLETE EDITION v3.0")
-    print("=" * 70)
-    print(f"👤 Creator: {BRANDING['creator']}")
-    print(f"📱 WhatsApp: {BRANDING['whatsapp_channel']}")
-    print(f"🌐 Website: {BRANDING['website']}")
-    print(f"📡 Port: {port}")
-    print("=" * 70)
-    print("🚀 NEW FEATURES:")
-    print("   ✅ Updated /details endpoint with 'You May Also Like' recommendations")
-    print("   ✅ New /popular-searches endpoint")
-    print("   ✅ New /search-suggest endpoint (POST)")
-    print("   ✅ Beautiful terminal-style home page")
-    print("=" * 70)
-    print("🚀 Server starting on port", port)
-    print("=" * 70)
+    logger.info("=" * 70)
+    logger.info(f"🎬 {BRANDING['api_name']} - v{BRANDING['api_version']}")
+    logger.info("=" * 70)
+    logger.info(f"👤 Creator: {BRANDING['creator']}")
+    logger.info(f"📱 WhatsApp: {BRANDING['whatsapp_channel']}")
+    logger.info(f"🌐 Website: {BRANDING['website']}")
+    logger.info(f"📡 Port: {PORT}")
+    logger.info("=" * 70)
+    logger.info("✅ All configuration loaded from environment variables")
+    logger.info("✅ API ready for production")
+    logger.info("=" * 70)
     
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
