@@ -851,48 +851,10 @@ def get_details():
     )
 
 # ============================================
-# STREAMS ENDPOINTS
+# UNIFIED SOURCES ENDPOINT (MOVED FROM /movie/streams & /series/streams)
 # ============================================
-@app.route("/movie/streams", methods=["GET"])
-def movie_streams():
-    subject_id = request.args.get("subjectId")
-    detail_path = request.args.get("detailPath")
-    
-    if not subject_id:
-        error_response = {"error": "Missing subjectId parameter"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=400,
-            mimetype='application/json'
-        )
-    
-    if not detail_path:
-        error_response = {"error": "Missing detailPath parameter. Use: /movie/streams?subjectId=xxx&detailPath=yyy"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=400,
-            mimetype='application/json'
-        )
-    
-    streams, subtitles = fetch_streams(subject_id, detail_path, "0", "0")
-    
-    data = OrderedDict()
-    data["type"] = "movie"
-    data["info"] = {
-        "subjectId": subject_id,
-        "detailPath": detail_path
-    }
-    data["streams"] = streams
-    data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
-    
-    return app.response_class(
-        response=json.dumps(add_branding(data), ensure_ascii=False),
-        status=200,
-        mimetype='application/json'
-    )
-
-@app.route("/series/streams", methods=["GET"])
-def series_streams():
+@app.route("/sources", methods=["GET"])
+def get_sources():
     subject_id = request.args.get("subjectId")
     detail_path = request.args.get("detailPath")
     se = request.args.get("se")
@@ -907,33 +869,36 @@ def series_streams():
         )
     
     if not detail_path:
-        error_response = {"error": "Missing detailPath parameter. Use: /series/streams?subjectId=xxx&detailPath=yyy&se=1&ep=1"}
+        error_response = {"error": "Missing detailPath parameter. Use: /sources?subjectId=xxx&detailPath=yyy"}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
             status=400,
             mimetype='application/json'
         )
     
-    if se is None or ep is None:
-        error_response = {"error": "Missing se (season) or ep (episode) parameters"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=400,
-            mimetype='application/json'
-        )
-    
-    streams, subtitles = fetch_streams(subject_id, detail_path, se, ep)
-    
-    data = OrderedDict()
-    data["type"] = "series"
-    data["info"] = {
-        "subjectId": subject_id,
-        "detailPath": detail_path
-    }
-    data["season"] = se
-    data["episode"] = ep
-    data["streams"] = streams
-    data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
+    # If season and episode are provided, it's a series episode
+    if se is not None and ep is not None:
+        streams, subtitles = fetch_streams(subject_id, detail_path, se, ep)
+        
+        data = OrderedDict()
+        data["type"] = "series"
+        data["subjectId"] = subject_id
+        data["detailPath"] = detail_path
+        data["season"] = se
+        data["episode"] = ep
+        data["streams"] = streams
+        data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
+        
+    else:
+        # It's a movie
+        streams, subtitles = fetch_streams(subject_id, detail_path, "0", "0")
+        
+        data = OrderedDict()
+        data["type"] = "movie"
+        data["subjectId"] = subject_id
+        data["detailPath"] = detail_path
+        data["streams"] = streams
+        data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
     
     return app.response_class(
         response=json.dumps(add_branding(data), ensure_ascii=False),
@@ -1020,11 +985,15 @@ def home():
 ┃  📺 STREAMS & DOWNLOADS                                            ┃
 ┃  ─────────────────────────────────────────────────────────────────┃
 ┃                                                                    ┃
-┃  GET  /movie/streams?subjectId=«id»&detailPath=«path»              ┃
-┃  GET  /series/streams?subjectId=«id»&detailPath=«path»&se=1&ep=1  ┃
-┃  GET  /stream?url=«url»                                            ┃
-┃  GET  /download?url=«url»                                          ┃
-┃  GET  /subtitle/download?url=«url»                                 ┃
+┃  GET  /sources?subjectId=«id»&detailPath=«path»                   ┃
+┃       (For movies - no se/ep)                                     ┃
+┃                                                                    ┃
+┃  GET  /sources?subjectId=«id»&detailPath=«path»&se=1&ep=1         ┃
+┃       (For series episodes)                                       ┃
+┃                                                                    ┃
+┃  GET  /stream?url=«url»  (Video playback)                         ┃
+┃  GET  /download?url=«url»  (Direct download)                      ┃
+┃  GET  /subtitle/download?url=«url»  (Subtitle download)           ┃
 ┃                                                                    ┃
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
@@ -1043,13 +1012,13 @@ def home():
 ┃  └──────────────────────────────────────────────────────────────┘ ┃
 ┃                                                                    ┃
 ┃  ┌──────────────────────────────────────────────────────────────┐ ┃
-┃  │  # Get movie streams                                         │ ┃
-┃  │  curl "{base_url}/movie/streams?subjectId=3562334115405909808&detailPath=brave-4YlSeNJw9f4" │ ┃
+┃  │  # Get movie sources                                         │ ┃
+┃  │  curl "{base_url}/sources?subjectId=3562334115405909808&detailPath=brave-4YlSeNJw9f4" │ ┃
 ┃  └──────────────────────────────────────────────────────────────┘ ┃
 ┃                                                                    ┃
 ┃  ┌──────────────────────────────────────────────────────────────┐ ┃
 ┃  │  # Get series episode                                        │ ┃
-┃  │  curl "{base_url}/series/streams?subjectId=5904172458474619680&detailPath=beauty-in-black-E6NEe5Ha927&se=2&ep=4" │ ┃
+┃  │  curl "{base_url}/sources?subjectId=4006958073083480920&detailPath=peaky-blinders-Ii0kbUrUZL4&se=1&ep=1" │ ┃
 ┃  └──────────────────────────────────────────────────────────────┘ ┃
 ┃                                                                    ┃
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
@@ -1094,6 +1063,7 @@ if __name__ == "__main__":
     logger.info(f"📡 Port: {PORT}")
     logger.info("=" * 70)
     logger.info("✅ All configuration loaded from environment variables")
+    logger.info("✅ NEW: Unified /sources endpoint (replaces /movie/streams & /series/streams)")
     logger.info("✅ API ready for production")
     logger.info("=" * 70)
     
