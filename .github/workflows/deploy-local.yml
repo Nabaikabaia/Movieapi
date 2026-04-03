@@ -1,0 +1,24 @@
+name: Auto Deploy to Local Machine
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH into local machine, pull, install, restart
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LOCAL_IP }}
+          username: ${{ secrets.LOCAL_USER }}
+          key: ${{ secrets.LOCAL_SSH_KEY }}
+          script: |
+            cd ~/nabees-movie-api && \
+            git pull origin main && \
+            source ~/venv/bin/activate && \
+            pip install -r requirements.txt && \
+            sudo systemctl restart nabees-api && \
+            echo "✅ API Updated and Restarted"
