@@ -115,12 +115,18 @@ COOKIES = {
 # HEADERS FOR STREAMING
 # ============================================
 STREAM_HEADERS = {
-    "User-Agent": os.environ.get("USER_AGENT", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"),
+    "User-Agent": os.environ.get("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
     "Accept": "*/*",
-    "Accept-Language": os.environ.get("ACCEPT_LANGUAGE", "en-GB,en-US;q=0.9,en;q=0.8"),
+    "Accept-Language": os.environ.get("ACCEPT_LANGUAGE", "en-US,en;q=0.9"),
+    "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
     "Referer": os.environ.get("REFERER", "https://123movienow.cc/"),
-    "Origin": os.environ.get("ORIGIN", "https://123movienow.cc")
+    "Origin": os.environ.get("ORIGIN", "https://123movienow.cc"),
+    "Sec-Fetch-Dest": "video",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "cross-site",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache"
 }
 
 # ============================================
@@ -188,8 +194,18 @@ def get_headers(detail_path, subject_id, se, ep):
 def fetch_streams(subject_id, detail_path, se, ep):
     """Fetch streams and subtitles for a specific episode"""
     params = {"subjectId": subject_id, "se": se, "ep": ep, "detailPath": detail_path}
-    res = requests.get(PLAY_URL, headers=get_headers(detail_path, subject_id, se, ep), cookies=COOKIES, params=params, timeout=15)
-    data = res.json()
+    
+    # Create a session with custom headers
+    session = requests.Session()
+    
+    try:
+        res = session.get(PLAY_URL, headers=get_headers(detail_path, subject_id, se, ep), cookies=COOKIES, params=params, timeout=30)
+        res.raise_for_status()
+        data = res.json()
+    except Exception as e:
+        logger.error(f"Error fetching streams: {e}")
+        return [], []
+    
     streams_raw = data.get("data", {}).get("streams", [])
     
     base_url = get_base_url()
@@ -221,7 +237,7 @@ def fetch_streams(subject_id, detail_path, se, ep):
             "detailPath": detail_path
         }
         try:
-            cap_res = requests.get(CAPTION_URL, params=cap_params, cookies=COOKIES, timeout=10)
+            cap_res = session.get(CAPTION_URL, params=cap_params, cookies=COOKIES, timeout=10)
             cap_res.raise_for_status()
             cap_data = cap_res.json()
             
@@ -257,6 +273,7 @@ def fetch_streams(subject_id, detail_path, se, ep):
             seen_languages.add(lang_code)
             unique_subtitles.append(sub)
     
+    session.close()
     return streams, unique_subtitles
 
 def fetch_detail_path(subject_id):
@@ -363,24 +380,41 @@ def proxy_stream():
     video_url = request.args.get("url")
     if not video_url:
         return jsonify({"error": "Missing url parameter"}), 400
+    
     try:
         headers = STREAM_HEADERS.copy()
+        
+        # Forward range header for seeking
         if "Range" in request.headers:
             headers["Range"] = request.headers["Range"]
+        
+        # Remove X-Forwarded-For if present (can cause blocking)
+        headers.pop('X-Forwarded-For', None)
+        
         response = requests.get(video_url, headers=headers, cookies=COOKIES, stream=True, timeout=30)
+        
         if response.status_code not in [200, 206]:
+            logger.error(f"Stream failed with status {response.status_code}: {video_url}")
             return jsonify({"error": f"Failed to fetch video: {response.status_code}"}), response.status_code
+        
         def generate():
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     yield chunk
-        return Response(stream_with_context(generate()), status=response.status_code, headers={
-            "Content-Type": response.headers.get("Content-Type", "video/mp4"),
-            "Content-Length": response.headers.get("Content-Length"),
-            "Accept-Ranges": response.headers.get("Accept-Ranges", "bytes"),
-            "Content-Range": response.headers.get("Content-Range"),
-            "Cache-Control": "public, max-age=3600"
-        })
+        
+        return Response(
+            stream_with_context(generate()),
+            status=response.status_code,
+            headers={
+                "Content-Type": response.headers.get("Content-Type", "video/mp4"),
+                "Content-Length": response.headers.get("Content-Length"),
+                "Accept-Ranges": response.headers.get("Accept-Ranges", "bytes"),
+                "Content-Range": response.headers.get("Content-Range"),
+                "Cache-Control": "public, max-age=3600",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length"
+            }
+        )
     except Exception as e:
         logger.error(f"Stream proxy error: {e}")
         return jsonify({"error": f"Failed to fetch stream: {str(e)}"}), 500
@@ -390,23 +424,36 @@ def proxy_download():
     video_url = request.args.get("url")
     if not video_url:
         return jsonify({"error": "Missing url parameter"}), 400
+    
     try:
-        response = requests.get(video_url, headers=STREAM_HEADERS, cookies=COOKIES, stream=True, timeout=30)
+        headers = STREAM_HEADERS.copy()
+        headers.pop('X-Forwarded-For', None)
+        
+        response = requests.get(video_url, headers=headers, cookies=COOKIES, stream=True, timeout=30)
+        
         if response.status_code != 200:
             return jsonify({"error": f"Failed to fetch video: {response.status_code}"}), response.status_code
+        
         filename = video_url.split("/")[-1].split("?")[0]
         if not filename.endswith(".mp4"):
             filename = f"{filename}.mp4"
+        
         def generate():
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     yield chunk
-        return Response(stream_with_context(generate()), status=200, headers={
-            "Content-Type": "video/mp4",
-            "Content-Disposition": f"attachment; filename=\"{filename}\"",
-            "Content-Length": response.headers.get("Content-Length"),
-            "Cache-Control": "public, max-age=3600"
-        })
+        
+        return Response(
+            stream_with_context(generate()),
+            status=200,
+            headers={
+                "Content-Type": "video/mp4",
+                "Content-Disposition": f"attachment; filename=\"{filename}\"",
+                "Content-Length": response.headers.get("Content-Length"),
+                "Cache-Control": "public, max-age=3600",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
     except Exception as e:
         logger.error(f"Download error: {e}")
         return jsonify({"error": f"Failed to download: {str(e)}"}), 500
@@ -416,19 +463,34 @@ def download_subtitle():
     subtitle_url = request.args.get("url")
     if not subtitle_url:
         return jsonify({"error": "Missing url parameter"}), 400
+    
     try:
-        response = requests.get(subtitle_url, headers={"User-Agent": STREAM_HEADERS["User-Agent"], "Accept": "*/*", "Referer": "https://123movienow.cc/"}, cookies=COOKIES, timeout=30)
+        headers = {
+            "User-Agent": STREAM_HEADERS["User-Agent"],
+            "Accept": "*/*",
+            "Referer": "https://123movienow.cc/"
+        }
+        
+        response = requests.get(subtitle_url, headers=headers, cookies=COOKIES, timeout=30)
+        
         if response.status_code != 200:
             return jsonify({"error": f"Failed to fetch subtitle: {response.status_code}"}), response.status_code
+        
         filename = subtitle_url.split("/")[-1].split("?")[0]
         if not filename.endswith(".srt"):
             filename = f"{filename}.srt"
-        return Response(response.content, status=200, headers={
-            "Content-Type": "text/plain; charset=utf-8",
-            "Content-Disposition": f"attachment; filename=\"{filename}\"",
-            "Content-Length": str(len(response.content)),
-            "Cache-Control": "public, max-age=3600"
-        })
+        
+        return Response(
+            response.content,
+            status=200,
+            headers={
+                "Content-Type": "text/plain; charset=utf-8",
+                "Content-Disposition": f"attachment; filename=\"{filename}\"",
+                "Content-Length": str(len(response.content)),
+                "Cache-Control": "public, max-age=3600",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
     except Exception as e:
         logger.error(f"Subtitle download error: {e}")
         return jsonify({"error": f"Failed to fetch subtitle: {str(e)}"}), 500
@@ -851,48 +913,10 @@ def get_details():
     )
 
 # ============================================
-# STREAMS ENDPOINTS
+# UNIFIED SOURCES ENDPOINT
 # ============================================
-@app.route("/movie/streams", methods=["GET"])
-def movie_streams():
-    subject_id = request.args.get("subjectId")
-    detail_path = request.args.get("detailPath")
-    
-    if not subject_id:
-        error_response = {"error": "Missing subjectId parameter"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=400,
-            mimetype='application/json'
-        )
-    
-    if not detail_path:
-        error_response = {"error": "Missing detailPath parameter. Use: /movie/streams?subjectId=xxx&detailPath=yyy"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=400,
-            mimetype='application/json'
-        )
-    
-    streams, subtitles = fetch_streams(subject_id, detail_path, "0", "0")
-    
-    data = OrderedDict()
-    data["type"] = "movie"
-    data["info"] = {
-        "subjectId": subject_id,
-        "detailPath": detail_path
-    }
-    data["streams"] = streams
-    data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
-    
-    return app.response_class(
-        response=json.dumps(add_branding(data), ensure_ascii=False),
-        status=200,
-        mimetype='application/json'
-    )
-
-@app.route("/series/streams", methods=["GET"])
-def series_streams():
+@app.route("/sources", methods=["GET"])
+def get_sources():
     subject_id = request.args.get("subjectId")
     detail_path = request.args.get("detailPath")
     se = request.args.get("se")
@@ -907,33 +931,37 @@ def series_streams():
         )
     
     if not detail_path:
-        error_response = {"error": "Missing detailPath parameter. Use: /series/streams?subjectId=xxx&detailPath=yyy&se=1&ep=1"}
+        error_response = {"error": "Missing detailPath parameter. Use: /sources?subjectId=xxx&detailPath=yyy&se=1&ep=1 (se/ep optional)"}
         return app.response_class(
             response=json.dumps(add_branding(error_response), ensure_ascii=False),
             status=400,
             mimetype='application/json'
         )
     
-    if se is None or ep is None:
-        error_response = {"error": "Missing se (season) or ep (episode) parameters"}
-        return app.response_class(
-            response=json.dumps(add_branding(error_response), ensure_ascii=False),
-            status=400,
-            mimetype='application/json'
-        )
-    
-    streams, subtitles = fetch_streams(subject_id, detail_path, se, ep)
-    
-    data = OrderedDict()
-    data["type"] = "series"
-    data["info"] = {
-        "subjectId": subject_id,
-        "detailPath": detail_path
-    }
-    data["season"] = se
-    data["episode"] = ep
-    data["streams"] = streams
-    data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
+    # Check if season and episode are provided
+    if se is not None and ep is not None:
+        # Series episode
+        streams, subtitles = fetch_streams(subject_id, detail_path, se, ep)
+        
+        data = OrderedDict()
+        data["type"] = "series"
+        data["subjectId"] = subject_id
+        data["detailPath"] = detail_path
+        data["season"] = se
+        data["episode"] = ep
+        data["streams"] = streams
+        data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
+        
+    else:
+        # Movie (no season/episode)
+        streams, subtitles = fetch_streams(subject_id, detail_path, "0", "0")
+        
+        data = OrderedDict()
+        data["type"] = "movie"
+        data["subjectId"] = subject_id
+        data["detailPath"] = detail_path
+        data["streams"] = streams
+        data["subtitles"] = {"available": len(subtitles) > 0, "count": len(subtitles), "list": subtitles}
     
     return app.response_class(
         response=json.dumps(add_branding(data), ensure_ascii=False),
@@ -1020,11 +1048,15 @@ def home():
 ┃  📺 STREAMS & DOWNLOADS                                            ┃
 ┃  ─────────────────────────────────────────────────────────────────┃
 ┃                                                                    ┃
-┃  GET  /movie/streams?subjectId=«id»&detailPath=«path»              ┃
-┃  GET  /series/streams?subjectId=«id»&detailPath=«path»&se=1&ep=1  ┃
-┃  GET  /stream?url=«url»                                            ┃
-┃  GET  /download?url=«url»                                          ┃
-┃  GET  /subtitle/download?url=«url»                                 ┃
+┃  GET  /sources?subjectId=«id»&detailPath=«path»                   ┃
+┃       (For movies - no se/ep)                                     ┃
+┃                                                                    ┃
+┃  GET  /sources?subjectId=«id»&detailPath=«path»&se=1&ep=1         ┃
+┃       (For series episodes)                                       ┃
+┃                                                                    ┃
+┃  GET  /stream?url=«url»  (Video playback)                         ┃
+┃  GET  /download?url=«url»  (Direct download)                      ┃
+┃  GET  /subtitle/download?url=«url»  (Subtitle download)           ┃
 ┃                                                                    ┃
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
 
@@ -1043,13 +1075,13 @@ def home():
 ┃  └──────────────────────────────────────────────────────────────┘ ┃
 ┃                                                                    ┃
 ┃  ┌──────────────────────────────────────────────────────────────┐ ┃
-┃  │  # Get movie streams                                         │ ┃
-┃  │  curl "{base_url}/movie/streams?subjectId=3562334115405909808&detailPath=brave-4YlSeNJw9f4" │ ┃
+┃  │  # Get movie sources                                         │ ┃
+┃  │  curl "{base_url}/sources?subjectId=3562334115405909808&detailPath=brave-4YlSeNJw9f4" │ ┃
 ┃  └──────────────────────────────────────────────────────────────┘ ┃
 ┃                                                                    ┃
 ┃  ┌──────────────────────────────────────────────────────────────┐ ┃
 ┃  │  # Get series episode                                        │ ┃
-┃  │  curl "{base_url}/series/streams?subjectId=5904172458474619680&detailPath=beauty-in-black-E6NEe5Ha927&se=2&ep=4" │ ┃
+┃  │  curl "{base_url}/sources?subjectId=4006958073083480920&detailPath=peaky-blinders-Ii0kbUrUZL4&se=1&ep=1" │ ┃
 ┃  └──────────────────────────────────────────────────────────────┘ ┃
 ┃                                                                    ┃
 ╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯
@@ -1094,7 +1126,9 @@ if __name__ == "__main__":
     logger.info(f"📡 Port: {PORT}")
     logger.info("=" * 70)
     logger.info("✅ All configuration loaded from environment variables")
-    logger.info("✅ API ready for production")
+    logger.info("✅ UNIFIED /sources endpoint active")
+    logger.info("✅ Movie: /sources?subjectId=xxx&detailPath=yyy")
+    logger.info("✅ Series: /sources?subjectId=xxx&detailPath=yyy&se=1&ep=1")
     logger.info("=" * 70)
     
     app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
